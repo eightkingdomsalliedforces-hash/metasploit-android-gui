@@ -34,13 +34,16 @@ jobs:
             core/termux/src/main/res/raw/mago_bridge_v1.tgz \
             core/termux/src/main/kotlin/dev/mago/android/termux/BridgeBundleMetadata.kt
       - name: Build, lint, and run risk-based unit tests
+        shell: bash
         run: |
+          set -o pipefail
+          mkdir -p ci-logs
           gradle --no-daemon --stacktrace :app:assembleDebug :app:lintDebug \
             :domain:installation:testDebugUnitTest \
             :core:security:testDebugUnitTest \
             :core:termux:testDebugUnitTest \
             :core:database:testDebugUnitTest \
-            :core:rpc:testDebugUnitTest
+            :core:rpc:testDebugUnitTest 2>&1 | tee ci-logs/gradle.log
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -48,11 +51,13 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Upload lint report on failure
+      - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: mago-lint-report-${{ github.run_number }}
-          path: app/build/reports/lint-results-debug.html
-          if-no-files-found: ignore
+          name: mago-build-diagnostics-${{ github.run_number }}
+          path: |
+            ci-logs/gradle.log
+            app/build/reports/lint-results-debug.html
+          if-no-files-found: warn
           retention-days: 7
