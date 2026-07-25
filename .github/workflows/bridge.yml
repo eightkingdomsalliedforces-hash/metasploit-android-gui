@@ -1,0 +1,33 @@
+name: Termux Bridge
+
+on:
+  pull_request:
+    paths:
+      - 'termux-bridge/**'
+      - '.github/workflows/bridge.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'termux-bridge/**'
+      - '.github/workflows/bridge.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck
+          python3 -m pip install check-jsonschema
+      - name: Verify Bridge contract
+        run: |
+          shellcheck termux-bridge/scripts/*.sh \
+            termux-bridge/scripts/actions/*.sh \
+            termux-bridge/tests/*.sh
+          bash termux-bridge/tests/contract_test.sh
