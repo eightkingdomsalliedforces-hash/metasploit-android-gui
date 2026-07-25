@@ -121,3 +121,5 @@ jobs:
           path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
           retention-days: 7
+
+# Triggered again after all source chunks were uploaded.
