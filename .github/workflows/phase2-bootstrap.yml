@@ -35,7 +35,7 @@ jobs:
                 .github/phase2-patch/part-01 \
                 .github/phase2-patch/part-02 \
                 .github/phase2-patch/part-03 > /tmp/mago-phase2.patch.xz.b64
-            base64 --decode /tmp/mago-phase2.patch.xz.b64 > /tmp/mago-phase2.patch.xz
+            base64 --ignore-garbage --decode /tmp/mago-phase2.patch.xz.b64 > /tmp/mago-phase2.patch.xz
             sha256sum /tmp/mago-phase2.patch.xz
             xz --test /tmp/mago-phase2.patch.xz
             xz --decompress --stdout /tmp/mago-phase2.patch.xz > /tmp/mago-phase2.patch
