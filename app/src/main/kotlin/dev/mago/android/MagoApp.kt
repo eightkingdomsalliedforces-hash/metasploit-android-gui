@@ -66,7 +66,8 @@ fun MagoApp(
             }
         }
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val wide = maxWidth >= 600.dp
+            val availableWidth = maxWidth
+            val wide = availableWidth >= 600.dp
             val navEntry by navController.currentBackStackEntryAsState()
             val current = navEntry?.destination
             val permanentDestinations = listOf(
@@ -89,7 +90,7 @@ fun MagoApp(
                     AppNavHost(
                         navController = navController,
                         modifier = Modifier
-                            .width(maxWidth - NAVIGATION_RAIL_WIDTH)
+                            .width(availableWidth - NAVIGATION_RAIL_WIDTH)
                             .fillMaxHeight(),
                         installationState = installationState,
                         dashboardState = dashboardState,
