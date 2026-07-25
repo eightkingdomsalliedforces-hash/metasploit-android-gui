@@ -14,7 +14,7 @@ class MagoAndroidLibraryPlugin : Plugin<Project> {
                 .filter { it.isNotBlank() }
                 .joinToString(".") { it.replace('-', '.') }
             namespace = "dev.mago.android.$namespaceSuffix"
-            compileSdk = 37
+            compileSdk = 36
             defaultConfig { minSdk = 31 }
 
             compileOptions {
