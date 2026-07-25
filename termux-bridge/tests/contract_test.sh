@@ -46,7 +46,10 @@ PATH="$FAKE_PATH" bash termux-bridge/scripts/dispatch.sh INSTALL_DEPENDENCIES op
 PATH="$FAKE_PATH" bash termux-bridge/scripts/dispatch.sh INSTALL_METASPLOIT op-msf-1 | jq -e '.success == true' >/dev/null
 PATH="$FAKE_PATH" bash termux-bridge/scripts/dispatch.sh INSTALL_METASPLOIT op-msf-2 | jq -e '.success == true' >/dev/null
 [[ "$(grep -c '^git clone ' "$MAGO_FAKE_LOG")" == 1 ]]
-! grep -F "$first_password" "$MAGO_FAKE_LOG"
+if grep -Fq "$first_password" "$MAGO_FAKE_LOG"; then
+  echo 'RPC password leaked into command log' >&2
+  exit 1
+fi
 
 FAIL_HOME="$TMP/failure-home"; mkdir -p "$FAIL_HOME/.mago/metasploit-framework"
 cat > "$TMP/fail-bin-initdb" <<'EOF_FAIL'
