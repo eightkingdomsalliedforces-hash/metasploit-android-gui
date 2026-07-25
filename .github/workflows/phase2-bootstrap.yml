@@ -23,20 +23,26 @@ jobs:
       - name: Reconstruct and verify Phase 2 patch
         shell: bash
         run: |
-          set -euo pipefail
-          cat .github/phase2-patch/part-00 \
-              .github/phase2-patch/part-01 \
-              .github/phase2-patch/part-02 \
-              .github/phase2-patch/part-03 > /tmp/mago-phase2.patch.xz.b64
-          base64 --decode /tmp/mago-phase2.patch.xz.b64 > /tmp/mago-phase2.patch.xz
-          echo 'Phase 2 compressed patch:'
-          sha256sum /tmp/mago-phase2.patch.xz
-          xz --test /tmp/mago-phase2.patch.xz
-          xz --decompress --stdout /tmp/mago-phase2.patch.xz > /tmp/mago-phase2.patch
-          echo 'Phase 2 uncompressed patch:'
-          sha256sum /tmp/mago-phase2.patch
-          test -s /tmp/mago-phase2.patch
-          git apply --check /tmp/mago-phase2.patch
+          set -o pipefail
+          mkdir -p ci-logs
+          {
+            set -eux
+            wc -c .github/phase2-patch/part-00 \
+                  .github/phase2-patch/part-01 \
+                  .github/phase2-patch/part-02 \
+                  .github/phase2-patch/part-03
+            cat .github/phase2-patch/part-00 \
+                .github/phase2-patch/part-01 \
+                .github/phase2-patch/part-02 \
+                .github/phase2-patch/part-03 > /tmp/mago-phase2.patch.xz.b64
+            base64 --decode /tmp/mago-phase2.patch.xz.b64 > /tmp/mago-phase2.patch.xz
+            sha256sum /tmp/mago-phase2.patch.xz
+            xz --test /tmp/mago-phase2.patch.xz
+            xz --decompress --stdout /tmp/mago-phase2.patch.xz > /tmp/mago-phase2.patch
+            sha256sum /tmp/mago-phase2.patch
+            test -s /tmp/mago-phase2.patch
+            git apply --check /tmp/mago-phase2.patch
+          } 2>&1 | tee ci-logs/bootstrap.log
 
       - name: Import Phase 2 source
         shell: bash
@@ -104,6 +110,7 @@ jobs:
         with:
           name: mago-phase2-build-diagnostics-${{ github.run_number }}
           path: |
+            ci-logs/bootstrap.log
             ci-logs/gradle.log
             app/build/reports/lint-results-debug.html
           if-no-files-found: warn
