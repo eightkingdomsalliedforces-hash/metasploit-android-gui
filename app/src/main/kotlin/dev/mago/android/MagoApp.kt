@@ -2,9 +2,10 @@ package dev.mago.android
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -87,7 +88,9 @@ fun MagoApp(
                     }
                     AppNavHost(
                         navController = navController,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .width(maxWidth - NAVIGATION_RAIL_WIDTH)
+                            .fillMaxHeight(),
                         installationState = installationState,
                         dashboardState = dashboardState,
                         diagnostics = diagnostics,
@@ -169,3 +172,5 @@ private fun AppNavHost(
         }
     }
 }
+
+private val NAVIGATION_RAIL_WIDTH = 80.dp
