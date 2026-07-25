@@ -10,7 +10,7 @@ class MagoAndroidApplicationPlugin : Plugin<Project> {
 
         extensions.configure<ApplicationExtension> {
             namespace = "dev.mago.android"
-            compileSdk = 37
+            compileSdk = 36
 
             defaultConfig {
                 applicationId = "dev.mago.android"
