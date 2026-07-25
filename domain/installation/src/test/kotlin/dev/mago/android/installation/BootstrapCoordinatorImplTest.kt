@@ -34,6 +34,7 @@ class BootstrapCoordinatorImplTest {
             BridgeAction.HEALTH_CHECK,
             BridgeAction.CONFIGURE_RPC,
             BridgeAction.START_SERVICES,
+            BridgeAction.HEALTH_CHECK,
         ).inOrder()
         assertThat(coordinator.state.value.stage).isEqualTo(InstallationStage.READY)
         assertThat(metasploit.loginUsernames).containsExactly("msf")
@@ -245,5 +246,8 @@ private fun completeHealth(
     "rpcConfigured" to rpcConfigured.toString(),
     "rpcProcessRunning" to rpcPortOpen.toString(),
     "rpcPortOpen" to rpcPortOpen.toString(),
+    "rpcHost" to "127.0.0.1",
+    "rpcPort" to "55552",
+    "prefix" to "/data/data/com.termux/files/usr",
     "bridgeVersion" to "2",
 )
