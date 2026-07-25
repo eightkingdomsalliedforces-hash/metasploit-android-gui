@@ -33,10 +33,6 @@ class ModulesViewModel(
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
 
-    init {
-        loadType(MetasploitModuleType.EXPLOIT)
-    }
-
     fun selectType(type: MetasploitModuleType) {
         if (type == _uiState.value.type && _uiState.value.modules.isNotEmpty()) return
         loadType(type)
