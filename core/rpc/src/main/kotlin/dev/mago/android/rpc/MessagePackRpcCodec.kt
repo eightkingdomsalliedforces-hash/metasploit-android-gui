@@ -27,7 +27,7 @@ class MessagePackRpcCodec {
             packer.packArrayHeader(count)
             packer.packString(method.value)
             if (method.requiresToken) packer.packString(requireNotNull(token))
-            arguments.forEach(packer::packValue)
+            arguments.forEach { argument -> packer.packRpcValue(argument) }
             packer.toByteArray()
         }
     }
@@ -46,7 +46,7 @@ class MessagePackRpcCodec {
         throw RpcCodecException("RPC_DECODE_FAILED", "Unable to decode MessagePack response", error)
     }
 
-    private fun MessagePacker.packValue(value: RpcValue) {
+    private fun MessagePacker.packRpcValue(value: RpcValue) {
         when (value) {
             RpcValue.Nil -> packNil()
             is RpcValue.Bool -> packBoolean(value.value)
@@ -59,13 +59,13 @@ class MessagePackRpcCodec {
             }
             is RpcValue.ArrayValue -> {
                 packArrayHeader(value.value.size)
-                value.value.forEach(::packValue)
+                value.value.forEach { item -> packRpcValue(item) }
             }
             is RpcValue.MapValue -> {
                 packMapHeader(value.value.size)
                 value.value.forEach { (key, item) ->
                     packString(key)
-                    packValue(item)
+                    packRpcValue(item)
                 }
             }
         }
