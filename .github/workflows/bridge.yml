@@ -31,7 +31,9 @@ jobs:
           set -o pipefail
           mkdir -p ci-logs
           {
-            shellcheck termux-bridge/scripts/*.sh \
+            shellcheck -x -e SC1090 \
+              termux-bridge/scripts/*.sh \
+              termux-bridge/scripts/lib/*.sh \
               termux-bridge/scripts/actions/*.sh \
               termux-bridge/tests/*.sh
             bash termux-bridge/tests/contract_test.sh
