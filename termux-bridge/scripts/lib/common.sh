@@ -1,23 +1,23 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-MAGO_HOME="${MAGO_HOME:-$HOME/.mago}"
-MAGO_STATE_DIR="$MAGO_HOME/state"
-MAGO_RUN_DIR="$MAGO_HOME/run"
-MAGO_LOG_DIR="$MAGO_HOME/logs"
-MAGO_CONFIG_DIR="$MAGO_HOME/config"
-MAGO_FRAMEWORK_DIR="$MAGO_HOME/metasploit-framework"
-MAGO_BUNDLE_DIR="$MAGO_HOME/bundle"
-MAGO_PGDATA="$MAGO_HOME/postgresql"
-MAGO_PGSOCKET="$MAGO_RUN_DIR/postgresql"
-MAGO_PGPORT="${MAGO_PGPORT:-54329}"
-MAGO_RPC_HOST="127.0.0.1"
-MAGO_RPC_PORT="55552"
-MAGO_RPC_CREDENTIALS="$MAGO_CONFIG_DIR/rpc.env"
-MAGO_RPC_PID="$MAGO_RUN_DIR/msfrpcd.pid"
-MAGO_PG_PID="$MAGO_PGDATA/postmaster.pid"
-MAGO_DB_CONFIG="$HOME/.msf4/database.yml"
-MAGO_INSTALL_LOCK="$MAGO_STATE_DIR/install.lock"
+export MAGO_HOME="${MAGO_HOME:-$HOME/.mago}"
+export MAGO_STATE_DIR="$MAGO_HOME/state"
+export MAGO_RUN_DIR="$MAGO_HOME/run"
+export MAGO_LOG_DIR="$MAGO_HOME/logs"
+export MAGO_CONFIG_DIR="$MAGO_HOME/config"
+export MAGO_FRAMEWORK_DIR="$MAGO_HOME/metasploit-framework"
+export MAGO_BUNDLE_DIR="$MAGO_HOME/bundle"
+export MAGO_PGDATA="$MAGO_HOME/postgresql"
+export MAGO_PGSOCKET="$MAGO_RUN_DIR/postgresql"
+export MAGO_PGPORT="${MAGO_PGPORT:-54329}"
+export MAGO_RPC_HOST="127.0.0.1"
+export MAGO_RPC_PORT="55552"
+export MAGO_RPC_CREDENTIALS="$MAGO_CONFIG_DIR/rpc.env"
+export MAGO_RPC_PID="$MAGO_RUN_DIR/msfrpcd.pid"
+export MAGO_PG_PID="$MAGO_PGDATA/postmaster.pid"
+export MAGO_DB_CONFIG="$HOME/.msf4/database.yml"
+export MAGO_INSTALL_LOCK="$MAGO_STATE_DIR/install.lock"
 
 mkdir -p "$MAGO_STATE_DIR" "$MAGO_RUN_DIR" "$MAGO_LOG_DIR" "$MAGO_CONFIG_DIR" "$MAGO_PGSOCKET"
 
@@ -135,7 +135,7 @@ start_postgres() {
   pg_ctl -D "$MAGO_PGDATA" -l "$MAGO_LOG_DIR/postgresql.log" \
     -o "-h 127.0.0.1 -p $MAGO_PGPORT -k $MAGO_PGSOCKET" start >/dev/null
   local attempt
-  for attempt in $(seq 1 30); do
+  for ((attempt = 0; attempt < 30; attempt += 1)); do
     postgres_ready && return 0
     sleep 1
   done
