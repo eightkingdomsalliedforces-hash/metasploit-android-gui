@@ -29,6 +29,7 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check check-jsonschema
           bash termux-bridge/tests/contract_test.sh
+          bash -n termux-bridge/scripts/dispatch.sh termux-bridge/scripts/lib/common.sh termux-bridge/scripts/actions/*.sh
           termux-bridge/packaging/build_bundle.sh
           git diff --exit-code -- \
             core/termux/src/main/res/raw/mago_bridge_v1.tgz \

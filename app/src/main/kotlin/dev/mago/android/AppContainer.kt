@@ -15,11 +15,11 @@ import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.OkHttpRpcTransport
 import dev.mago.android.rpc.RpcTransport
+import dev.mago.android.security.AndroidKeystoreSecretStore
 import dev.mago.android.security.InMemoryRpcTokenStore
 import dev.mago.android.security.RpcEndpointPolicy
 import dev.mago.android.security.RpcTokenStore
 import dev.mago.android.security.SecretStore
-import dev.mago.android.security.UnconfiguredSecretStore
 import dev.mago.android.termux.TermuxGatewayImpl
 import okhttp3.OkHttpClient
 
@@ -35,7 +35,7 @@ class AppContainer(context: Context) {
         )
 
     val rpcTokenStore: RpcTokenStore = InMemoryRpcTokenStore()
-    val secretStore: SecretStore = UnconfiguredSecretStore()
+    val secretStore: SecretStore = AndroidKeystoreSecretStore(appContext)
     val rpcTransport: RpcTransport = OkHttpRpcTransport(
         endpointPolicy = RpcEndpointPolicy(),
         client = OkHttpClient(),
@@ -49,5 +49,6 @@ class AppContainer(context: Context) {
         termuxGateway = termuxGateway,
         metasploitRepository = metasploitConnectionRepository,
         installationStateRepository = installationStateRepository,
+        secretStore = secretStore,
     )
 }

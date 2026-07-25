@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'git %s\n' "$*" >> "${MAGO_FAKE_LOG:?}"
+if [[ "${1:-}" == clone ]]; then
+  dest="${@: -1}"
+  mkdir -p "$dest/.git"
+  printf '%s\n' 'https://github.com/rapid7/metasploit-framework.git' > "$dest/.fake-origin"
+  cat > "$dest/Gemfile.lock" <<'LOCK'
+GEM
+  specs:
+
+BUNDLED WITH
+   2.6.9
+LOCK
+  for name in msfconsole msfrpcd msfdb; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$dest/$name"
+    chmod +x "$dest/$name"
+  done
+  exit 0
+fi
+if [[ "${1:-}" == -C ]]; then
+  dir="$2"; shift 2
+  case "${1:-} ${2:-}" in
+    'remote get-url') cat "$dir/.fake-origin" ;;
+    'rev-parse --short=12') printf '0123456789ab\n' ;;
+    *) : ;;
+  esac
+fi
