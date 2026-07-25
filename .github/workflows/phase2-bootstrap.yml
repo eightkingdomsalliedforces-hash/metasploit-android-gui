@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [feature/phase2-installer]
-    paths:
-      - .github/workflows/phase2-bootstrap.yml
 
 permissions:
   contents: write
