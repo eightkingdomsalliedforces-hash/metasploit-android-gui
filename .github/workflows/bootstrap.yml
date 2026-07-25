@@ -1,0 +1,123 @@
+name: Bootstrap MAGO source and build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.bootstrap/source.xz.part*'
+      - '.github/workflows/bootstrap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout bootstrap repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect source bundle
+        id: source
+        shell: bash
+        run: |
+          if [[ -f .bootstrap/source.xz.part00 ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Source bundle is already imported; nothing to do."
+          fi
+
+      - name: Restore complete source tree
+        if: steps.source.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/source.xz.part0* | tr -d '\r\n' | base64 --decode > /tmp/mago-source.tar.xz
+          xz --test /tmp/mago-source.tar.xz
+          tar -xJf /tmp/mago-source.tar.xz -C .
+          rm -rf .bootstrap
+          test -f settings.gradle.kts
+          test -f .github/workflows/android.yml
+          test -f termux-bridge/tests/contract_test.sh
+          # The repository intentionally has no wrapper JAR. setup-gradle installs
+          # the exact Gradle version, so CI must invoke the PATH executable.
+          sed -i 's#\./gradlew#gradle#g' .github/workflows/android.yml
+
+      - name: Commit imported source
+        if: steps.source.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          git diff --cached --quiet && exit 0
+          git commit -m "import: MAGO Phase 1 foundation"
+          git push origin HEAD:main
+
+      - name: Set up JDK 17
+        if: steps.source.outputs.available == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.5.0
+        if: steps.source.outputs.available == 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Install Android SDK 36
+        if: steps.source.outputs.available == 'true'
+        shell: bash
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify Termux Bridge contract and embedded bundle
+        if: steps.source.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check check-jsonschema
+          bash termux-bridge/tests/contract_test.sh
+          termux-bridge/packaging/build_bundle.sh
+          git diff --exit-code -- \
+            core/termux/src/main/res/raw/mago_bridge_v1.tgz \
+            core/termux/src/main/kotlin/dev/mago/android/termux/BridgeBundleMetadata.kt
+
+      - name: Build, lint, and run risk-based unit tests
+        if: steps.source.outputs.available == 'true'
+        shell: bash
+        run: |
+          gradle --no-daemon --stacktrace \
+            :app:assembleDebug \
+            :app:lintDebug \
+            :domain:installation:testDebugUnitTest \
+            :core:security:testDebugUnitTest \
+            :core:termux:testDebugUnitTest \
+            :core:database:testDebugUnitTest \
+            :core:rpc:testDebugUnitTest
+
+      - name: Upload debug APK
+        if: steps.source.outputs.available == 'true' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mago-debug-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload lint report on failure
+        if: steps.source.outputs.available == 'true' && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mago-lint-report-${{ github.run_number }}
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+          retention-days: 7
