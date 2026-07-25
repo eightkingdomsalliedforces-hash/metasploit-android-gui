@@ -16,6 +16,8 @@ dependencies {
     implementation(project(":feature:onboarding"))
     implementation(project(":feature:dashboard"))
     implementation(project(":feature:diagnostics"))
+    implementation(project(":feature:modules"))
+    implementation(project(":feature:terminal"))
 
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
