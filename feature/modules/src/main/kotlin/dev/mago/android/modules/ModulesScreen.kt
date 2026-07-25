@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mago.android.model.MetasploitModuleInfo
@@ -42,6 +43,9 @@ fun ModulesScreen(
     onBackToList: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    LaunchedEffect(state.type, state.modules.isEmpty(), state.errorMessage) {
+        if (state.modules.isEmpty() && !state.loading && state.errorMessage == null) onRetry()
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val availableWidth = maxWidth
         val wide = availableWidth >= 700.dp
@@ -124,7 +128,10 @@ private fun ModuleList(
             OutlinedButton(onClick = onRetry) { Text("重試") }
         }
         Text("${state.visibleModules.size} 個模組", style = MaterialTheme.typography.labelLarge)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             items(state.visibleModules, key = { it.fullName }) { module ->
                 Card(
                     modifier = Modifier
