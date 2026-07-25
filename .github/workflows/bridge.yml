@@ -26,8 +26,23 @@ jobs:
           sudo apt-get install -y jq shellcheck
           python3 -m pip install check-jsonschema
       - name: Verify Bridge contract
+        shell: bash
         run: |
-          shellcheck termux-bridge/scripts/*.sh \
-            termux-bridge/scripts/actions/*.sh \
-            termux-bridge/tests/*.sh
-          bash termux-bridge/tests/contract_test.sh
+          set -o pipefail
+          mkdir -p ci-logs
+          {
+            shellcheck -x -e SC1090 -P termux-bridge/scripts \
+              termux-bridge/scripts/*.sh \
+              termux-bridge/scripts/lib/*.sh \
+              termux-bridge/scripts/actions/*.sh \
+              termux-bridge/tests/*.sh
+            bash termux-bridge/tests/contract_test.sh
+          } 2>&1 | tee ci-logs/bridge-validation.log
+      - name: Upload Bridge diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mago-bridge-diagnostics-${{ github.run_number }}
+          path: ci-logs/bridge-validation.log
+          if-no-files-found: error
+          retention-days: 7
