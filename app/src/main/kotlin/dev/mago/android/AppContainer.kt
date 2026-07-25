@@ -11,8 +11,12 @@ import dev.mago.android.installation.BootstrapCoordinatorImpl
 import dev.mago.android.installation.InstallationStateRepository
 import dev.mago.android.installation.TermuxGateway
 import dev.mago.android.metasploit.MetasploitConnectionRepository
+import dev.mago.android.metasploit.MetasploitConsoleRepository
+import dev.mago.android.metasploit.MetasploitModuleRepository
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
+import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
+import dev.mago.android.rpc.MetasploitModuleRepositoryImpl
 import dev.mago.android.rpc.OkHttpRpcTransport
 import dev.mago.android.rpc.RpcTransport
 import dev.mago.android.security.AndroidKeystoreSecretStore
@@ -44,6 +48,10 @@ class AppContainer(context: Context) {
     )
     val metasploitConnectionRepository: MetasploitConnectionRepository =
         MetasploitConnectionRepositoryImpl(rpcTransport, secretStore, rpcTokenStore)
+    val metasploitModuleRepository: MetasploitModuleRepository =
+        MetasploitModuleRepositoryImpl(rpcTransport, rpcTokenStore)
+    val metasploitConsoleRepository: MetasploitConsoleRepository =
+        MetasploitConsoleRepositoryImpl(rpcTransport, rpcTokenStore)
     val termuxGateway: TermuxGateway = TermuxGatewayImpl(appContext, dispatcherProvider)
     val bootstrapCoordinator: BootstrapCoordinator = BootstrapCoordinatorImpl(
         termuxGateway = termuxGateway,
