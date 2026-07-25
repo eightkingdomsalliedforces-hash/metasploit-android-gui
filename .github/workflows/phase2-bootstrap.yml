@@ -21,54 +21,34 @@ jobs:
       - name: Reconstruct and verify Phase 2 source
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p ci-logs
-          {
-            set -eux
-            cat \
-              .github/phase2-payload/part-00-00 \
-              .github/phase2-payload/part-00-01 \
-              .github/phase2-payload/part-00-02 \
-              .github/phase2-payload/part-00-03 \
-              .github/phase2-payload/part-01-00 \
-              .github/phase2-payload/part-01-01 \
-              .github/phase2-payload/part-01-02 \
-              .github/phase2-payload/part-01-03 > /tmp/mago-phase2-prefix.b64
-
-            python3 - <<'PY'
-          from pathlib import Path
-
-          specs = (
-              ("part-02", "j5bVqXVEBTgPDoPcf475H71VLQy0Uuw6zERn6q38WwuplcuYgYJTaq6X2Rpa5oLbEOFKKMUPVszk1ghsGzAYPpr595B3zNy6Xgrs", 8000),
-              ("part-03", "/TMP7WkkNKyS2D5tNM0csTURONAOWie5UCQPPhC3az3c92hgpiZb4qLEjotmjkxw7ORLNnkE26c5hxaYv4f/e9rAolx4BbyrAGfP", 8000),
-              ("part-04", "DDkofH5E++pbIW6RcWRQkq+Z5f0qsbMv8ceEPOay/U3yd051PHKb4UVPevUcU/PNAtcEGVsgSQZKC0VBzyXNwGvO8QWHrPa3Wi3b", 5708),
-          )
-          for name, expected_start, expected_length in specs:
-              source = Path(".github/phase2-payload") / name
-              raw = "".join(source.read_text(encoding="utf-8").split())
-              offset = raw.find(expected_start)
-              if offset != 40:
-                  raise SystemExit(f"{name}: expected 40-character prefix, got offset {offset}")
-              normalized = raw[offset:]
-              if len(normalized) != expected_length:
-                  raise SystemExit(
-                      f"{name}: expected {expected_length} Base64 characters, got {len(normalized)}"
-                  )
-              Path(f"/tmp/{name}.b64").write_text(normalized, encoding="utf-8")
-              print(f"{name}: removed verified 40-character prefix")
-          PY
-
-            cat /tmp/mago-phase2-prefix.b64 \
-                /tmp/part-02.b64 \
-                /tmp/part-03.b64 \
-                /tmp/part-04.b64 > /tmp/mago-phase2-source.tar.xz.b64
-            test "$(wc -c < /tmp/mago-phase2-source.tar.xz.b64)" -eq 37708
-            base64 --decode /tmp/mago-phase2-source.tar.xz.b64 > /tmp/mago-phase2-source.tar.xz
-            echo '5281f456877d8366c374586467ea4ae83ed921e2eaca34b08517496b60619c66  /tmp/mago-phase2-source.tar.xz' | sha256sum --check
-            xz --test /tmp/mago-phase2-source.tar.xz
-            tar -tJf /tmp/mago-phase2-source.tar.xz > /tmp/mago-phase2-files.txt
-            test -s /tmp/mago-phase2-files.txt
-          } 2>&1 | tee ci-logs/bootstrap.log
+          cat \
+            .github/phase2-payload/part-00-00 \
+            .github/phase2-payload/part-00-01 \
+            .github/phase2-payload/part-00-02 \
+            .github/phase2-payload/part-00-03 \
+            .github/phase2-payload/part-01-00 \
+            .github/phase2-payload/part-01-01 \
+            .github/phase2-payload/part-01-02 \
+            .github/phase2-payload/part-01-03 \
+            .github/phase2-payload/part-02-00 \
+            .github/phase2-payload/part-02-01 \
+            .github/phase2-payload/part-02-02 \
+            .github/phase2-payload/part-02-03 \
+            .github/phase2-payload/part-03-00 \
+            .github/phase2-payload/part-03-01 \
+            .github/phase2-payload/part-03-02 \
+            .github/phase2-payload/part-03-03 \
+            .github/phase2-payload/part-04-00 \
+            .github/phase2-payload/part-04-01 \
+            .github/phase2-payload/part-04-02 > /tmp/mago-phase2-source.tar.xz.b64
+          test "$(wc -c < /tmp/mago-phase2-source.tar.xz.b64)" -eq 37708
+          base64 --decode /tmp/mago-phase2-source.tar.xz.b64 > /tmp/mago-phase2-source.tar.xz
+          echo '5281f456877d8366c374586467ea4ae83ed921e2eaca34b08517496b60619c66  /tmp/mago-phase2-source.tar.xz' | sha256sum --check
+          xz --test /tmp/mago-phase2-source.tar.xz
+          tar -tJf /tmp/mago-phase2-source.tar.xz | tee ci-logs/source-files.log
+          test -s ci-logs/source-files.log
 
       - name: Import Phase 2 source
         shell: bash
@@ -136,7 +116,7 @@ jobs:
         with:
           name: mago-phase2-build-diagnostics-${{ github.run_number }}
           path: |
-            ci-logs/bootstrap.log
+            ci-logs/source-files.log
             ci-logs/gradle.log
             app/build/reports/lint-results-debug.html
           if-no-files-found: warn
