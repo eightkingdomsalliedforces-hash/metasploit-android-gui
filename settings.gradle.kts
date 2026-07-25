@@ -31,4 +31,6 @@ include(
     ":feature:onboarding",
     ":feature:dashboard",
     ":feature:diagnostics",
+    ":feature:modules",
+    ":feature:terminal",
 )
