@@ -26,6 +26,7 @@ class TermuxGatewayImpl(
     },
     private val bootstrapFactory: TermuxBootstrapCommandFactory =
         TermuxBootstrapCommandFactory(BridgeBundleMetadata.SHA256),
+    private val timeoutPolicy: BridgeActionTimeoutPolicy = BridgeActionTimeoutPolicy(),
 ) : TermuxGateway {
     private val appContext = context.applicationContext
     private val json = Json { ignoreUnknownKeys = false }
@@ -82,7 +83,7 @@ class TermuxGatewayImpl(
             ),
             workingDirectory = TermuxRunCommandContract.BRIDGE_HOME,
         )
-        when (val commandResult = commandClient.execute(command)) {
+        when (val commandResult = commandClient.execute(command, timeoutPolicy.timeoutMillis(action))) {
             is AppResult.Failure -> commandResult
             is AppResult.Success -> {
                 val result = commandResult.value
@@ -110,12 +111,15 @@ class TermuxGatewayImpl(
                     } else if (!response.success || result.exitCode != 0) {
                         AppResult.Failure(
                             AppError(
-                                errorCode = "BRIDGE_ACTION_FAILED",
+                                errorCode = "BRIDGE_${action.name}_${response.exitCode}",
                                 userMessage = response.message,
                                 technicalMessage = result.stderr,
                                 suggestedAction = SuggestedAction.RETRY,
-                                retryable = true,
-                                diagnosticData = response.data,
+                                retryable = response.exitCode in 70..79,
+                                diagnosticData = response.data + mapOf(
+                                    "bridgeAction" to action.name,
+                                    "bridgeExitCode" to response.exitCode.toString(),
+                                ),
                             ),
                         )
                     } else {

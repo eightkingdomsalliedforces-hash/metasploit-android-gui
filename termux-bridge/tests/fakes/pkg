@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf 'pkg %s\n' "$*" >> "${MAGO_FAKE_LOG:?}"
+exit "${MAGO_FAKE_PKG_EXIT:-0}"

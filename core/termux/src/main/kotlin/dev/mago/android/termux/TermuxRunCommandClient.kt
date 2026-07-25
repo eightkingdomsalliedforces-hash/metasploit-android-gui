@@ -11,9 +11,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class TermuxRunCommandClient(
     private val context: Context,
-    private val timeoutMillis: Long = 60_000L,
+    private val defaultTimeoutMillis: Long = 60_000L,
 ) {
-    suspend fun execute(command: TermuxCommand): AppResult<TermuxCommandResult> {
+    suspend fun execute(
+        command: TermuxCommand,
+        timeoutMillis: Long = defaultTimeoutMillis,
+    ): AppResult<TermuxCommandResult> {
         val pending = TermuxCommandResultRegistry.register()
         val callback = PendingIntent.getService(
             context,

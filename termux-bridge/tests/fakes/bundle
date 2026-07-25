@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf 'bundle %s\n' "$*" >> "${MAGO_FAKE_LOG:?}"
+if [[ "${1:-}" == exec ]]; then shift; "$@"; else exit 0; fi

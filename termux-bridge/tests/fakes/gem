@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf 'gem %s\n' "$*" >> "${MAGO_FAKE_LOG:?}"
+exit 0

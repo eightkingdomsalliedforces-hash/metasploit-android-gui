@@ -29,7 +29,7 @@ fun OnboardingScreen(
     ) {
         Text("MAGO 初始設定", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Metasploit 將在 Termux 的本機環境執行。第一階段只檢查環境與部署安全 Bridge。",
+            "Metasploit、PostgreSQL 與 RPC 將安裝在同一台裝置的 Termux 私有環境。首次安裝可能需要較長時間，Android 與 Termux 的確認畫面不會被隱藏。",
             modifier = Modifier.padding(vertical = 12.dp),
         )
         InstallationStepper(
