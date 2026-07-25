@@ -18,36 +18,38 @@ jobs:
           ref: feature/phase2-installer
           fetch-depth: 0
 
-      - name: Reconstruct and verify Phase 2 patch
+      - name: Reconstruct and verify Phase 2 source
         shell: bash
         run: |
           set -o pipefail
           mkdir -p ci-logs
           {
             set -eux
-            : > /tmp/mago-phase2.patch.xz
-            for part in \
-              .github/phase2-patch/part-00 \
-              .github/phase2-patch/part-01 \
-              .github/phase2-patch/part-02 \
-              .github/phase2-patch/part-03
-            do
-              wc -c "$part"
-              base64 --ignore-garbage --decode "$part" >> /tmp/mago-phase2.patch.xz
-            done
-            sha256sum /tmp/mago-phase2.patch.xz
-            xz --test /tmp/mago-phase2.patch.xz
-            xz --decompress --stdout /tmp/mago-phase2.patch.xz > /tmp/mago-phase2.patch
-            sha256sum /tmp/mago-phase2.patch
-            test -s /tmp/mago-phase2.patch
-            git apply --check /tmp/mago-phase2.patch
+            cat \
+              .github/phase2-payload/part-00-00 \
+              .github/phase2-payload/part-00-01 \
+              .github/phase2-payload/part-00-02 \
+              .github/phase2-payload/part-00-03 \
+              .github/phase2-payload/part-01-00 \
+              .github/phase2-payload/part-01-01 \
+              .github/phase2-payload/part-01-02 \
+              .github/phase2-payload/part-01-03 \
+              .github/phase2-payload/part-02 \
+              .github/phase2-payload/part-03 \
+              .github/phase2-payload/part-04 > /tmp/mago-phase2-source.tar.xz.b64
+            wc -c /tmp/mago-phase2-source.tar.xz.b64
+            base64 --decode /tmp/mago-phase2-source.tar.xz.b64 > /tmp/mago-phase2-source.tar.xz
+            echo '5281f456877d8366c374586467ea4ae83ed921e2eaca34b08517496b60619c66  /tmp/mago-phase2-source.tar.xz' | sha256sum --check
+            xz --test /tmp/mago-phase2-source.tar.xz
+            tar -tJf /tmp/mago-phase2-source.tar.xz > /tmp/mago-phase2-files.txt
+            test -s /tmp/mago-phase2-files.txt
           } 2>&1 | tee ci-logs/bootstrap.log
 
       - name: Import Phase 2 source
         shell: bash
         run: |
           set -euo pipefail
-          git apply --index /tmp/mago-phase2.patch
+          tar -xJf /tmp/mago-phase2-source.tar.xz -C .
           rm -rf .github/phase2-patch .github/phase2-payload
           rm -f .github/workflows/phase2-bootstrap.yml
           git add -A
