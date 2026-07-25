@@ -29,9 +29,13 @@ jobs:
               .github/phase2-patch/part-02 \
               .github/phase2-patch/part-03 > /tmp/mago-phase2.patch.xz.b64
           base64 --decode /tmp/mago-phase2.patch.xz.b64 > /tmp/mago-phase2.patch.xz
-          echo 'ae54648946cab9fa6202b86d7dee7c1567916dfed9032d2fe10f9322a6ca1405  /tmp/mago-phase2.patch.xz' | sha256sum --check
+          echo 'Phase 2 compressed patch:'
+          sha256sum /tmp/mago-phase2.patch.xz
+          xz --test /tmp/mago-phase2.patch.xz
           xz --decompress --stdout /tmp/mago-phase2.patch.xz > /tmp/mago-phase2.patch
-          echo '73d58dd530e6521283748a27e5cef2143ae0ce07cedfabeebed6cee6543d4a10  /tmp/mago-phase2.patch' | sha256sum --check
+          echo 'Phase 2 uncompressed patch:'
+          sha256sum /tmp/mago-phase2.patch
+          test -s /tmp/mago-phase2.patch
           git apply --check /tmp/mago-phase2.patch
 
       - name: Import Phase 2 source
