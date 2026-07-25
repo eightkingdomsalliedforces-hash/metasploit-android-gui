@@ -1,0 +1,39 @@
+name: Refresh Embedded Bridge Bundle
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.head_ref == 'feature/phase2-installer'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase2-installer
+          fetch-depth: 0
+      - name: Generate and commit verified bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          termux-bridge/packaging/build_bundle.sh
+          bundle=core/termux/src/main/res/raw/mago_bridge_v1.tgz
+          metadata=core/termux/src/main/kotlin/dev/mago/android/termux/BridgeBundleMetadata.kt
+          bundle_sha="$(sha256sum "$bundle" | awk '{print $1}')"
+          metadata_sha="$(sed -n 's/.*SHA256 = "\([0-9a-f]\{64\}\)".*/\1/p' "$metadata")"
+          test "$bundle_sha" = "$metadata_sha"
+          printf 'Generated embedded Bridge SHA-256: %s\n' "$bundle_sha"
+          git add "$bundle" "$metadata"
+          if git diff --cached --quiet; then
+            echo 'Embedded Bridge bundle is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'build: regenerate embedded Bridge bundle on CI'
+          git push origin HEAD:feature/phase2-installer
