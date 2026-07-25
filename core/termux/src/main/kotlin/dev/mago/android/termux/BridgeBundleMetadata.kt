@@ -1,6 +1,6 @@
 package dev.mago.android.termux
 
 object BridgeBundleMetadata {
-    const val SHA256 = "8825436f351647508bf4a6d6a0dae5ff0b88035c33b52ad9c622540d9a39f8c6"
+    const val SHA256 = "0715486e77dcbbe4dba9e155b57789a7916705c24f32b85da9a8f9ed360f726a"
     const val VERSION = 2
 }
