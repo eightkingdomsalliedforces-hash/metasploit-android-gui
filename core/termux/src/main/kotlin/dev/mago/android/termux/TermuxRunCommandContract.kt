@@ -21,6 +21,6 @@ object TermuxRunCommandContract {
     const val PREFIX = "/data/data/com.termux/files/usr"
     const val HOME = "/data/data/com.termux/files/home"
     const val BASH = "$PREFIX/bin/bash"
-    const val BRIDGE_HOME = "$HOME/.mago/bridge-v1"
+    const val BRIDGE_HOME = "$HOME/.mago/bridge-v2"
     const val BRIDGE_DISPATCH = "$BRIDGE_HOME/dispatch.sh"
 }

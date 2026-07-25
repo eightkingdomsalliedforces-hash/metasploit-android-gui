@@ -4,9 +4,12 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class BridgeAction {
+    UPDATE_PACKAGES,
+    INSTALL_DEPENDENCIES,
     INSTALL_METASPLOIT,
     REPAIR_METASPLOIT,
     INITIALIZE_DATABASE,
+    CONFIGURE_RPC,
     START_SERVICES,
     STOP_SERVICES,
     START_RPC,

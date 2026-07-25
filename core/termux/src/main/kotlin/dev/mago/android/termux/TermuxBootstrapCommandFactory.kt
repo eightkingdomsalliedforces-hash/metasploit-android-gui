@@ -49,8 +49,8 @@ class TermuxBootstrapCommandFactory(
             set -euo pipefail
             umask 077
             bootstrap_dir=\"${'$'}HOME/.mago/bootstrap\"
-            bridge_dir=\"${'$'}HOME/.mago/bridge-v1\"
-            archive=\"${'$'}bootstrap_dir/mago_bridge_v1.tgz\"
+            bridge_dir=\"${'$'}HOME/.mago/bridge-v2\"
+            archive=\"${'$'}bootstrap_dir/mago_bridge_v2.tgz\"
             mkdir -p \"${'$'}bootstrap_dir\"
             rm -rf \"${'$'}bridge_dir\"
             mkdir -p \"${'$'}bridge_dir\"

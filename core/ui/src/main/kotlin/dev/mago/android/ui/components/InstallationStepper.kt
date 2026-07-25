@@ -44,7 +44,12 @@ fun InstallationStepper(
                 InstallationStage.TERMUX_REQUIRED,
                 InstallationStage.PERMISSION_REQUIRED,
                 InstallationStage.DEPLOYING_BRIDGE,
+                InstallationStage.UPDATING_PACKAGES,
+                InstallationStage.INSTALLING_DEPENDENCIES,
+                InstallationStage.INSTALLING_METASPLOIT,
+                InstallationStage.INITIALIZING_DATABASE,
                 InstallationStage.CONFIGURING_RPC,
+                InstallationStage.STARTING_SERVICES,
                 InstallationStage.VERIFYING,
                 InstallationStage.READY,
             )
