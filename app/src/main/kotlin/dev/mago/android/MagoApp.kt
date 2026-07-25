@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material3.Icon
@@ -34,33 +36,46 @@ import dev.mago.android.diagnostics.DiagnosticsScreen
 import dev.mago.android.installation.InstallationStage
 import dev.mago.android.installation.InstallationState
 import dev.mago.android.model.DiagnosticEntry
+import dev.mago.android.model.MetasploitModuleSummary
+import dev.mago.android.model.MetasploitModuleType
+import dev.mago.android.modules.ModulesScreen
+import dev.mago.android.modules.ModulesUiState
 import dev.mago.android.navigation.MagoDestination
 import dev.mago.android.onboarding.OnboardingRoute
+import dev.mago.android.terminal.TerminalScreen
+import dev.mago.android.terminal.TerminalUiState
 import dev.mago.android.ui.theme.MagoTheme
 
 @Composable
 fun MagoApp(
     installationState: InstallationState,
     dashboardState: DashboardUiState,
+    modulesState: ModulesUiState,
+    terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
     onOpenTermux: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
+    onModuleTypeSelected: (MetasploitModuleType) -> Unit,
+    onModuleQueryChanged: (String) -> Unit,
+    onModuleSelected: (MetasploitModuleSummary) -> Unit,
+    onModuleBack: () -> Unit,
+    onModuleRetry: () -> Unit,
+    onTerminalStart: () -> Unit,
+    onTerminalStop: () -> Unit,
+    onTerminalInputChanged: (String) -> Unit,
+    onTerminalSend: () -> Unit,
+    onTerminalRefresh: () -> Unit,
+    onTerminalClear: () -> Unit,
 ) {
     MagoTheme {
         val navController = rememberNavController()
         val ready = installationState.stage == InstallationStage.READY
         LaunchedEffect(ready) {
-            val target = if (ready) {
-                MagoDestination.Dashboard.route
-            } else {
-                MagoDestination.Onboarding.route
-            }
+            val target = if (ready) MagoDestination.Dashboard.route else MagoDestination.Onboarding.route
             if (navController.currentDestination?.route != target) {
                 navController.navigate(target) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        inclusive = true
-                    }
+                    popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
                     launchSingleTop = true
                 }
             }
@@ -71,34 +86,47 @@ fun MagoApp(
             val navEntry by navController.currentBackStackEntryAsState()
             val current = navEntry?.destination
             val permanentDestinations = listOf(
-                MagoDestination.Dashboard to Icons.Default.Home,
-                MagoDestination.Diagnostics to Icons.Default.MonitorHeart,
+                Triple(MagoDestination.Dashboard, Icons.Default.Home, "首頁"),
+                Triple(MagoDestination.Modules, Icons.Default.Apps, "模組"),
+                Triple(MagoDestination.Terminal, Icons.Default.Code, "Console"),
+                Triple(MagoDestination.Diagnostics, Icons.Default.MonitorHeart, "診斷"),
             )
             val showNavigation = current?.route != MagoDestination.Onboarding.route
             if (wide && showNavigation) {
                 Row(Modifier.fillMaxSize()) {
                     NavigationRail {
-                        permanentDestinations.forEach { (destination, icon) ->
+                        permanentDestinations.forEach { (destination, icon, description) ->
                             NavigationRailItem(
                                 selected = current?.hierarchy?.any { it.route == destination.route } == true,
                                 onClick = { navController.navigate(destination.route) { launchSingleTop = true } },
-                                icon = { Icon(icon, contentDescription = destination.label) },
+                                icon = { Icon(icon, contentDescription = description) },
                                 label = { Text(destination.label) },
                             )
                         }
                     }
                     AppNavHost(
                         navController = navController,
-                        modifier = Modifier
-                            .width(availableWidth - NAVIGATION_RAIL_WIDTH)
-                            .fillMaxHeight(),
+                        modifier = Modifier.width(availableWidth - NAVIGATION_RAIL_WIDTH).fillMaxHeight(),
                         installationState = installationState,
                         dashboardState = dashboardState,
+                        modulesState = modulesState,
+                        terminalState = terminalState,
                         diagnostics = diagnostics,
                         onRetry = onRetry,
                         onOpenTermux = onOpenTermux,
                         onRequestTermuxPermission = onRequestTermuxPermission,
                         onShowDiagnostics = { navController.navigate(MagoDestination.Diagnostics.route) },
+                        onModuleTypeSelected = onModuleTypeSelected,
+                        onModuleQueryChanged = onModuleQueryChanged,
+                        onModuleSelected = onModuleSelected,
+                        onModuleBack = onModuleBack,
+                        onModuleRetry = onModuleRetry,
+                        onTerminalStart = onTerminalStart,
+                        onTerminalStop = onTerminalStop,
+                        onTerminalInputChanged = onTerminalInputChanged,
+                        onTerminalSend = onTerminalSend,
+                        onTerminalRefresh = onTerminalRefresh,
+                        onTerminalClear = onTerminalClear,
                     )
                 }
             } else {
@@ -106,11 +134,11 @@ fun MagoApp(
                     bottomBar = {
                         if (showNavigation) {
                             NavigationBar {
-                                permanentDestinations.forEach { (destination, icon) ->
+                                permanentDestinations.forEach { (destination, icon, description) ->
                                     NavigationBarItem(
                                         selected = current?.hierarchy?.any { it.route == destination.route } == true,
                                         onClick = { navController.navigate(destination.route) { launchSingleTop = true } },
-                                        icon = { Icon(icon, contentDescription = destination.label) },
+                                        icon = { Icon(icon, contentDescription = description) },
                                         label = { Text(destination.label) },
                                     )
                                 }
@@ -123,11 +151,24 @@ fun MagoApp(
                         modifier = Modifier.fillMaxSize().padding(padding),
                         installationState = installationState,
                         dashboardState = dashboardState,
+                        modulesState = modulesState,
+                        terminalState = terminalState,
                         diagnostics = diagnostics,
                         onRetry = onRetry,
                         onOpenTermux = onOpenTermux,
                         onRequestTermuxPermission = onRequestTermuxPermission,
                         onShowDiagnostics = { navController.navigate(MagoDestination.Diagnostics.route) },
+                        onModuleTypeSelected = onModuleTypeSelected,
+                        onModuleQueryChanged = onModuleQueryChanged,
+                        onModuleSelected = onModuleSelected,
+                        onModuleBack = onModuleBack,
+                        onModuleRetry = onModuleRetry,
+                        onTerminalStart = onTerminalStart,
+                        onTerminalStop = onTerminalStop,
+                        onTerminalInputChanged = onTerminalInputChanged,
+                        onTerminalSend = onTerminalSend,
+                        onTerminalRefresh = onTerminalRefresh,
+                        onTerminalClear = onTerminalClear,
                     )
                 }
             }
@@ -141,11 +182,24 @@ private fun AppNavHost(
     modifier: Modifier,
     installationState: InstallationState,
     dashboardState: DashboardUiState,
+    modulesState: ModulesUiState,
+    terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
     onOpenTermux: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onShowDiagnostics: () -> Unit,
+    onModuleTypeSelected: (MetasploitModuleType) -> Unit,
+    onModuleQueryChanged: (String) -> Unit,
+    onModuleSelected: (MetasploitModuleSummary) -> Unit,
+    onModuleBack: () -> Unit,
+    onModuleRetry: () -> Unit,
+    onTerminalStart: () -> Unit,
+    onTerminalStop: () -> Unit,
+    onTerminalInputChanged: (String) -> Unit,
+    onTerminalSend: () -> Unit,
+    onTerminalRefresh: () -> Unit,
+    onTerminalClear: () -> Unit,
 ) {
     NavHost(
         navController = navController,
@@ -167,6 +221,27 @@ private fun AppNavHost(
         }
         composable(MagoDestination.Dashboard.route) {
             DashboardScreen(dashboardState, onOpenTermux, onShowDiagnostics)
+        }
+        composable(MagoDestination.Modules.route) {
+            ModulesScreen(
+                state = modulesState,
+                onTypeSelected = onModuleTypeSelected,
+                onQueryChanged = onModuleQueryChanged,
+                onModuleSelected = onModuleSelected,
+                onBackToList = onModuleBack,
+                onRetry = onModuleRetry,
+            )
+        }
+        composable(MagoDestination.Terminal.route) {
+            TerminalScreen(
+                state = terminalState,
+                onStart = onTerminalStart,
+                onStop = onTerminalStop,
+                onInputChanged = onTerminalInputChanged,
+                onSend = onTerminalSend,
+                onRefresh = onTerminalRefresh,
+                onClearOutput = onTerminalClear,
+            )
         }
         composable(MagoDestination.Diagnostics.route) {
             DiagnosticsScreen(diagnostics)
