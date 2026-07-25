@@ -1,0 +1,91 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "b2e27815262321337cc8abf7748c5afd",
+    "entities": [
+      {
+        "tableName": "installation_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`singletonId` INTEGER NOT NULL, `stage` TEXT NOT NULL, `progress` INTEGER NOT NULL, `operationId` TEXT, `lastSuccessfulStage` TEXT, `retryCount` INTEGER NOT NULL, `failureKind` TEXT, `errorCode` TEXT, `errorUserMessage` TEXT, `errorTechnicalMessage` TEXT, `errorRetryable` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`singletonId`))",
+        "fields": [
+          {
+            "fieldPath": "singletonId",
+            "columnName": "singletonId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progress",
+            "columnName": "progress",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastSuccessfulStage",
+            "columnName": "lastSuccessfulStage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "retryCount",
+            "columnName": "retryCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureKind",
+            "columnName": "failureKind",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorUserMessage",
+            "columnName": "errorUserMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorTechnicalMessage",
+            "columnName": "errorTechnicalMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorRetryable",
+            "columnName": "errorRetryable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "singletonId"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b2e27815262321337cc8abf7748c5afd')"
+    ]
+  }
+}

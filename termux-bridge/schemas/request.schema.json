@@ -2,21 +2,45 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "operationId", "action", "parameters"],
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "action",
+    "parameters"
+  ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "operationId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+    "schemaVersion": {
+      "const": 2
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,128}$"
+    },
     "action": {
       "enum": [
-        "INSTALL_METASPLOIT", "REPAIR_METASPLOIT", "INITIALIZE_DATABASE",
-        "START_SERVICES", "STOP_SERVICES", "START_RPC", "STOP_RPC",
-        "UPDATE_METASPLOIT", "BACKUP_ENVIRONMENT", "RESTORE_ENVIRONMENT",
-        "HEALTH_CHECK", "CLEAN_CACHE"
+        "UPDATE_PACKAGES",
+        "INSTALL_DEPENDENCIES",
+        "INSTALL_METASPLOIT",
+        "REPAIR_METASPLOIT",
+        "INITIALIZE_DATABASE",
+        "CONFIGURE_RPC",
+        "START_SERVICES",
+        "STOP_SERVICES",
+        "START_RPC",
+        "STOP_RPC",
+        "UPDATE_METASPLOIT",
+        "BACKUP_ENVIRONMENT",
+        "RESTORE_ENVIRONMENT",
+        "HEALTH_CHECK",
+        "CLEAN_CACHE"
       ]
     },
     "parameters": {
       "type": "object",
-      "additionalProperties": { "type": "string", "maxLength": 4096 }
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
     }
   }
 }

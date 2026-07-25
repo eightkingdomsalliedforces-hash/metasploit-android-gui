@@ -72,3 +72,16 @@ git diff --exit-code -- \
 ```
 
 專案採風險導向測試，不以覆蓋率作為目標。靜態 Compose 排版與簡單 wiring 使用 Build、Lint 和針對性人工 Smoke Test 驗證。
+
+## Phase 2 local installer
+
+MAGO can now drive a fixed Termux Bridge lifecycle for the official Rapid7 Metasploit Framework source, PostgreSQL and a localhost-only MessagePack RPC service. The first installation may take substantial time and storage because native Ruby gems are compiled on-device.
+
+Before starting:
+
+1. Install a compatible Termux build from the official Termux GitHub Releases or F-Droid source.
+2. Open Termux once so its bootstrap environment is created.
+3. Set `allow-external-apps=true` in `~/.termux/termux.properties`, then run `termux-reload-settings`.
+4. Grant MAGO the `com.termux.permission.RUN_COMMAND` permission when Android asks.
+
+The RPC service is bound only to `127.0.0.1:55552`; credentials are generated inside Termux and encrypted with Android Keystore after the one-time Bridge response. MAGO never sends RPC credentials as shell command arguments.
