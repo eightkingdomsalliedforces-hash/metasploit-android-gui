@@ -2,13 +2,13 @@
 
 ## Goal
 
-Upgrade the existing Diagnostics destination into a privacy-preserving About and support surface. The page must show stable build and runtime information, present the current installation state, and let the user manually copy a strictly whitelisted diagnostic summary without triggering RPC, Termux Bridge, background work, file creation, or network upload.
+Upgrade the existing Diagnostics destination into a privacy-preserving About and support surface. The page shows stable build and runtime information, presents the current installation state, and lets the user manually copy a strictly whitelisted diagnostic summary without triggering RPC, Termux Bridge, background work, file creation, or network upload.
 
 ## Approved Product Decisions
 
 - About information is integrated at the top of the existing Diagnostics page.
 - The diagnostic summary does not contain device brand or model.
-- The summary may contain the safe installation stage, last successful stage, failure category, and safe error code.
+- The summary contains the safe installation stage, last successful stage, failure category, and safe error code.
 - The summary never contains device identifiers, credentials, tokens, full paths, raw exception text, raw Bridge output, stack traces, or `AppError.diagnosticData`.
 - Copying is always an explicit user action. MAGO never uploads or sends diagnostics automatically.
 - Phase 7C adds no new RPC method, Bridge action, endpoint, permission, retry loop, polling, analytics, or background job.
@@ -17,22 +17,62 @@ Upgrade the existing Diagnostics destination into a privacy-preserving About and
 
 The current screen accepts `List<DiagnosticEntry>` and masks entries marked `sensitive`, but it has no About information, typed presentation model, stable copy format, or clipboard action.
 
-`BootstrapCoordinator` already publishes the required passive sources:
+`BootstrapCoordinator` already publishes the passive sources required by this feature:
 
 - `state: StateFlow<InstallationState>`
 - `environment: StateFlow<TermuxEnvironment?>`
 - `metasploitVersion: StateFlow<MetasploitVersion?>`
 - `diagnostics: StateFlow<List<DiagnosticEntry>>`
 
-Phase 7C consumes these existing flows only. Entering the page does not call `inspectEnvironment()`, retry installation, run a Bridge command, or contact localhost RPC.
+Phase 7C consumes these existing values only. Entering the page does not call `inspectEnvironment()`, retry installation, run a Bridge command, or contact localhost RPC.
 
-## Architecture
+## Module and Component Boundaries
 
-### DiagnosticsUiModel
+### App Layer: Platform Input and Clipboard
 
-The Diagnostics feature receives one typed, already-presented model:
+The App module is the only layer allowed to read App-specific and Android platform constants:
+
+- `BuildConfig.VERSION_NAME`
+- `BuildConfig.VERSION_CODE`
+- `Build.VERSION.RELEASE`
+- `Build.VERSION.SDK_INT`
+- `Build.SUPPORTED_ABIS.firstOrNull()`
+- minimum supported API 31
+- `BridgeBundleMetadata.VERSION`
+- `BridgeBundleMetadata.SHA256`
+
+It maps these values and the current coordinator flows into a feature-owned primitive input model. The Diagnostics feature never depends on the App module or its `BuildConfig`.
+
+The App layer also owns `ClipboardManager`. It exposes one synchronous callback to Compose:
 
 ```kotlin
+onCopySummary: (String) -> Boolean
+```
+
+The callback writes the text with clipboard label `MAGO diagnostics`, catches platform failures, never logs the summary or exception, and returns `true` only when the write completes without throwing.
+
+### Diagnostics Feature: Typed Presentation
+
+The feature module owns the following required models:
+
+```kotlin
+data class DiagnosticsPresentationInput(
+    val appVersionName: String,
+    val appVersionCode: Long,
+    val minimumApi: Int,
+    val bridgeVersion: Int,
+    val bridgeSha256: String,
+    val androidRelease: String?,
+    val apiLevel: Int,
+    val primaryAbi: String?,
+    val metasploitVersion: String?,
+    val currentStage: String,
+    val lastSuccessfulStage: String?,
+    val failureKind: String?,
+    val errorCode: String?,
+    val diagnosticEntries: List<DiagnosticEntry>,
+)
+
 data class DiagnosticsUiModel(
     val about: DiagnosticsAboutInfo,
     val system: DiagnosticsSystemInfo,
@@ -40,11 +80,7 @@ data class DiagnosticsUiModel(
     val bridgeEntries: List<DiagnosticsEntryUiModel>,
     val copySummary: String,
 )
-```
 
-Recommended supporting types:
-
-```kotlin
 data class DiagnosticsAboutInfo(
     val appVersionName: String,
     val appVersionCode: Long,
@@ -54,9 +90,10 @@ data class DiagnosticsAboutInfo(
 )
 
 data class DiagnosticsSystemInfo(
-    val androidRelease: String,
+    val androidRelease: String?,
     val apiLevel: Int,
-    val primaryAbi: String,
+    val primaryAbi: String?,
+    val metasploitVersion: String?,
 )
 
 data class DiagnosticsInstallationInfo(
@@ -73,37 +110,30 @@ data class DiagnosticsEntryUiModel(
 )
 ```
 
-Missing values are represented as `null` in typed models and rendered as `尚未取得` on screen or `unknown` in the copied summary. Absence of an error is rendered as `無` on screen and `none` in the copied summary.
+Missing optional values remain `null` in the typed model. The screen renders them as `尚未取得`; the copied summary renders them as `unknown`. Absence of failure or error values renders as `無` on screen and `none` in the summary.
 
 ### DiagnosticsPresenter
 
-`DiagnosticsPresenter` combines platform/build values and the four existing coordinator flows into `DiagnosticsUiModel`.
+`DiagnosticsPresenter` is a pure feature-layer component:
 
-Inputs:
+```kotlin
+fun present(input: DiagnosticsPresentationInput): DiagnosticsUiModel
+```
 
-- MAGO `BuildConfig.VERSION_NAME`
-- MAGO `BuildConfig.VERSION_CODE`
-- Android release and API level
-- `Build.SUPPORTED_ABIS.firstOrNull()`
-- minimum supported API 31
-- `BridgeBundleMetadata.VERSION`
-- `BridgeBundleMetadata.SHA256`
-- `InstallationState`
-- optional `MetasploitVersion`
-- existing `DiagnosticEntry` values
+It performs no Android API access, I/O, coroutine launch, repository call, Bridge action, or RPC call.
 
-The presenter does not access the clipboard, perform I/O, launch coroutines, or call repositories.
-
-Device brand, model, serial, Android ID, advertising ID, installer identity, and other device-identifying fields are not accepted as presenter inputs.
+Device brand, model, serial, Android ID, advertising ID, installer identity, and other device-identifying fields do not exist in `DiagnosticsPresentationInput`, so they cannot enter the presentation or summary paths accidentally.
 
 ### DiagnosticsSummaryBuilder
 
-`DiagnosticsSummaryBuilder` is a pure formatter that produces the stable copied text. It accepts only typed data and exact whitelisted Bridge entries. It never serializes the complete `DiagnosticEntry` list.
+`DiagnosticsSummaryBuilder` is a pure formatter that produces stable copied text from typed values and exact whitelisted Bridge entries. It never serializes the complete `DiagnosticEntry` list.
 
-The copied Bridge key order is fixed:
+## Exact Bridge Allowlists
+
+The display and copy allowlists are identical and ordered:
 
 ```kotlin
-private val copiedBridgeKeys = listOf(
+private val allowedBridgeKeys = listOf(
     "bridge.frameworkRepository",
     "bridge.msfconsole",
     "bridge.databaseInitialized",
@@ -118,9 +148,9 @@ private val copiedBridgeKeys = listOf(
 )
 ```
 
-Exact matching is required. Unknown keys do not enter the summary.
+Exact matching is required. Unknown future keys remain hidden and never enter copied text.
 
-Additional deny rules apply even if a future source incorrectly marks an entry as non-sensitive. A key is never copied when its normalized name contains any of:
+Additional deny rules apply even if a key is accidentally added to the allowlist or incorrectly marked non-sensitive. A key is omitted when its lowercase normalized name contains any of:
 
 - `password`
 - `token`
@@ -132,27 +162,16 @@ Additional deny rules apply even if a future source incorrectly marks an entry a
 - `deviceid`
 - `androidid`
 
-Entries marked `sensitive=true` are also never copied.
+Entries marked `sensitive=true` are also omitted from the display value and copied summary.
 
-`bridge.rpcHost` is never copied verbatim. It is converted to one of:
+`bridge.rpcHost` is never displayed or copied verbatim. It is converted to one of:
 
-- `RPC localhost: true`
-- `RPC localhost: false`
-- `RPC localhost: unknown`
+- screen: `是`, `否`, or `尚未取得`
+- summary: `RPC localhost: true`, `false`, or `unknown`
 
-Only `127.0.0.1`, `::1`, and `localhost` count as localhost.
+Only `127.0.0.1`, `::1`, and case-insensitive `localhost` count as localhost.
 
-### Clipboard Boundary
-
-`DiagnosticsScreen` exposes one callback:
-
-```kotlin
-onCopySummary: (String) -> Unit
-```
-
-The App layer writes the supplied text to `ClipboardManager` with label `MAGO diagnostics`.
-
-The screen and summary builder never access Android clipboard APIs directly. Clipboard failures are caught at the App layer and converted into a fixed success or failure UI event. Exception messages are not shown or added to diagnostics.
+Duplicate diagnostic keys are reduced before filtering; the last received entry wins. Output order follows `allowedBridgeKeys`, not source-list order.
 
 ## Screen Design
 
@@ -168,9 +187,7 @@ Displays:
 - `Android 12 / API 31 以上`
 - `診斷資料不會自動上傳`
 
-The complete Bridge SHA-256 is included only in the copied summary.
-
-No update check, website link, release download, or clickable SHA is added.
+The complete Bridge SHA-256 is included only in copied text. No update check, website link, release download, or clickable SHA is added.
 
 ### 2. System and Installation Card
 
@@ -178,6 +195,7 @@ Displays:
 
 - Android release and API level
 - primary CPU ABI
+- Metasploit version
 - current installation stage
 - last successful stage
 - failure kind
@@ -187,22 +205,29 @@ It does not show `AppError.userMessage`, `diagnosticData`, operation IDs, retry 
 
 ### 3. Bridge Status Section
 
-Existing diagnostic entries remain visible, but rendering follows a fail-closed rule:
+The section renders exactly the ordered `allowedBridgeKeys` that survive the deny and sensitive checks.
 
-- exact approved display keys and non-sensitive values are shown
-- sensitive or unknown entries display `已隱藏`
+- approved non-sensitive values are displayed
+- `bridge.rpcHost` is replaced by the derived localhost status
+- sensitive, denied, missing, and unknown values display `已隱藏` or `尚未取得` as appropriate
+- arbitrary source entries are never appended to the list
 
-The display allowlist may include the same Bridge health keys used by the copied summary. Unknown future entries must not become visible by default.
-
-### 4. Copy Action
+### 4. Copy Action and Status
 
 A full-width button reads:
 
 `複製已遮罩的診斷摘要`
 
-After a successful clipboard write, show `已複製診斷摘要` in the screen or a Snackbar. On failure, show `無法複製診斷摘要`.
+On click, `DiagnosticsScreen` passes `uiModel.copySummary` to `onCopySummary`. The screen stores only a transient local result enum:
 
-The summary is not rendered inside an editable text field and is not saved to a file.
+```kotlin
+enum class DiagnosticsCopyStatus { SUCCESS, FAILURE }
+```
+
+- `true` result displays `已複製診斷摘要`
+- `false` result displays `無法複製診斷摘要`
+
+The status is visible in screen semantics or a Snackbar. It is not Toast-only feedback. The summary itself is not kept in local UI state, rendered in an editable field, or saved to a file.
 
 ## Stable Summary Format
 
@@ -247,41 +272,45 @@ All fields are emitted in this fixed order. Missing optional values use `unknown
 ## Data Flow
 
 ```text
-BuildConfig / Build / BridgeBundleMetadata
-                    │
-BootstrapCoordinator flows
+App BuildConfig / Android Build / BridgeBundleMetadata
+BootstrapCoordinator current StateFlow values
+                         │
+                         ▼
+      App constructs DiagnosticsPresentationInput
+                         │
+                         ▼
+              DiagnosticsPresenter
+                         │
+                         ▼
+               DiagnosticsUiModel
+                    │          │
+                    │          └── stable copySummary
+                    ▼
+             DiagnosticsScreen
+                    │ explicit button click
+                    ▼
+          App clipboard callback -> Boolean
                     │
                     ▼
-          DiagnosticsPresenter
-                    │
-                    ▼
-          DiagnosticsUiModel
-             │             │
-             │             └── DiagnosticsSummaryBuilder
-             ▼                              │
-      DiagnosticsScreen                    ▼
-             │                       copySummary text
-             └──────── explicit callback ────────┐
-                                                 ▼
-                                        App clipboard layer
+        fixed success or failure screen status
 ```
 
-No source read is initiated by the screen.
+No source read is initiated by the screen or presenter.
 
 ## Error Handling
 
 - Missing platform or coordinator values render as `尚未取得` and copy as `unknown`.
-- Duplicate diagnostic keys are normalized into a map; the last received value wins before allowlist filtering.
 - Unknown diagnostic keys remain hidden and are omitted from copied text.
-- Clipboard service absence or runtime failure produces the fixed failure message without retry.
-- Presenter or summary formatting must be total functions and must not throw on missing data.
-- No failure path writes diagnostics to Logcat, files, analytics, exception text, or network services.
+- Clipboard service absence or runtime failure returns `false` without retry.
+- Clipboard exceptions and summary text are not logged.
+- Presenter and summary builder are total functions and do not throw on missing data.
+- No failure path writes diagnostics to files, analytics, exception text, or network services.
 
 ## Accessibility and Responsive Behavior
 
 - The page uses one `LazyColumn` and visible text labels.
 - The copy control is a full-width text button.
-- Status feedback is visible in screen semantics or a Snackbar, not Toast-only feedback.
+- Status feedback is visible in semantics or a Snackbar.
 - The implementation uses existing MAGO theme, dark mode, font scaling, and reduced-motion settings.
 - No animation is introduced.
 
@@ -290,17 +319,18 @@ No source read is initiated by the screen.
 Focused unit tests cover:
 
 1. Summary includes App, Android, ABI, Bridge, Metasploit, and installation status.
-2. Summary contains no brand, model, serial, Android ID, or other device identifier.
+2. Presentation input has no brand, model, serial, Android ID, or other device identifier field.
 3. Sensitive entries are excluded.
 4. Unknown Bridge keys are excluded.
 5. Keys containing password, token, credential, secret, path, prefix, serial, device ID, or Android ID are excluded even when `sensitive=false`.
-6. `rpcHost=127.0.0.1`, `::1`, or `localhost` produces `RPC localhost: true`.
+6. `rpcHost=127.0.0.1`, `::1`, or `localhost` produces localhost `true`.
 7. A non-localhost RPC host produces `false` without exposing the address.
 8. Safe error code, current stage, last successful stage, and failure kind are included.
-9. `userMessage`, `diagnosticData`, stack traces, paths, and raw error bodies are not represented in the model or summary.
+9. `userMessage`, `diagnosticData`, stack traces, paths, and raw error bodies are not represented in the input model or summary.
 10. Duplicate keys resolve deterministically and output order is fixed.
 11. Missing data produces `unknown` or `none` without throwing.
-12. Presenter construction does not call coordinator actions, repositories, Bridge commands, or RPC.
+12. Presenter construction performs no coordinator action, repository call, Bridge command, or RPC.
+13. Clipboard callback returns success and failure without logging or exposing exception text.
 
 The verification gate reruns:
 
