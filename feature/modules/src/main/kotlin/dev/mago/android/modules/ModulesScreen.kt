@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,9 +34,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import dev.mago.android.model.MetasploitModuleInfo
 import dev.mago.android.model.MetasploitModuleOption
 import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleSummary
@@ -60,6 +68,11 @@ fun ModulesScreen(
         if (state.modules.isEmpty() && !state.loading && state.errorMessage == null) onRetry()
     }
     state.confirmation?.let { confirmation ->
+        var authorized by rememberSaveable(
+            confirmation.request.type.rpcName,
+            confirmation.request.name,
+            confirmation.action.name,
+        ) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = onCancelRun,
             title = {
@@ -74,7 +87,7 @@ fun ModulesScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("模組：${confirmation.request.type.rpcName}/${confirmation.request.name}")
-                    Text("只可對你擁有或已獲明確授權的目標執行。")
+                    Text("參數摘要中的敏感值已遮罩；此確認不會被記住。")
                     if (confirmation.redactedOptions.isEmpty()) {
                         Text("沒有非空白參數")
                     } else {
@@ -82,10 +95,25 @@ fun ModulesScreen(
                             Text("$name：$value")
                         }
                     }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { authorized = !authorized },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Checkbox(
+                            checked = authorized,
+                            onCheckedChange = { authorized = it },
+                        )
+                        Text("我確認僅在本人擁有或已獲明確授權的環境執行")
+                    }
                 }
             },
             confirmButton = {
-                Button(onClick = onConfirmRun) {
+                Button(
+                    onClick = onConfirmRun,
+                    enabled = authorized && !state.runLoading,
+                ) {
                     Text(if (confirmation.action == MetasploitModuleRunAction.CHECK) "確認檢查" else "確認執行")
                 }
             },
@@ -315,6 +343,8 @@ private fun OptionFields(
 ) {
     options.forEach { option ->
         val error = state.validationErrors[option.name]
+        val numeric = option.type.lowercase() in setOf("int", "integer", "port")
+        val sensitive = MODULE_RUN_VALIDATOR.isSensitive(option.name)
         OutlinedTextField(
             value = state.optionValues[option.name].orEmpty(),
             onValueChange = { onOptionChanged(option.name, it) },
@@ -325,6 +355,14 @@ private fun OptionFields(
             isError = error != null,
             singleLine = option.type.lowercase() !in setOf("text", "string") ||
                 !option.description.contains("command", ignoreCase = true),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
+            ),
+            visualTransformation = if (sensitive) {
+                PasswordVisualTransformation()
+            } else {
+                VisualTransformation.None
+            },
             modifier = Modifier.fillMaxWidth(),
         )
         if (option.enums.isNotEmpty()) {
@@ -354,3 +392,5 @@ private fun RpcValue.displayText(): String = when (this) {
     is RpcValue.ArrayValue -> value.joinToString(", ") { it.displayText() }
     is RpcValue.MapValue -> value.entries.joinToString("\n") { (key, item) -> "$key：${item.displayText()}" }
 }
+
+private val MODULE_RUN_VALIDATOR = ModuleRunValidator()
