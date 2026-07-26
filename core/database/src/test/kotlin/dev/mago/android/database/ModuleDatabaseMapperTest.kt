@@ -4,10 +4,30 @@ import com.google.common.truth.Truth.assertThat
 import dev.mago.android.metasploit.ModuleExecutionRecord
 import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleRunStatus
+import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
 import org.junit.Test
 
 class ModuleDatabaseMapperTest {
+    @Test
+    fun `catalog round trip keeps display name and rank`() {
+        val mapper = ModuleDatabaseMapper()
+        val summary = MetasploitModuleSummary(
+            type = MetasploitModuleType.EXPLOIT,
+            name = "windows/smb/example",
+            displayName = "Example SMB Module",
+            rank = "excellent",
+            disclosureDate = "2026-01-02",
+        )
+
+        val restored = mapper.summary(mapper.catalog(summary, refreshedAtEpochMillis = 10))
+
+        assertThat(restored.type).isEqualTo(summary.type)
+        assertThat(restored.name).isEqualTo(summary.name)
+        assertThat(restored.displayName).isEqualTo(summary.displayName)
+        assertThat(restored.rank).isEqualTo(summary.rank)
+    }
+
     @Test
     fun `execution round trip keeps redacted summary and identifiers`() {
         val mapper = ModuleDatabaseMapper()
