@@ -15,6 +15,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mago.android.reporting.ReportFormat
@@ -22,9 +23,15 @@ import dev.mago.android.reporting.ReportFormat
 @Composable
 fun ReportsScreen(
     state: ReportsUiState,
+    onEnsurePreviewLoaded: () -> Unit,
     onFormatSelected: (ReportFormat) -> Unit,
     onExport: () -> Unit,
 ) {
+    LaunchedEffect(Unit) {
+        onEnsurePreviewLoaded()
+    }
+
+    val snapshot = state.previewSnapshot
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -44,7 +51,7 @@ fun ReportsScreen(
                 FilterChip(
                     selected = state.format == format,
                     onClick = { onFormatSelected(format) },
-                    enabled = !state.loading,
+                    enabled = !state.exporting,
                     label = { Text(format.displayName) },
                 )
             }
@@ -62,19 +69,27 @@ fun ReportsScreen(
         }
 
         Text(
-            "作用中 Workspace：${state.activeWorkspace ?: "將於匯出時取得"}",
+            "作用中 Workspace：${snapshot?.workspace?.name ?: "尚未載入"}",
             style = MaterialTheme.typography.labelLarge,
         )
+        if (snapshot != null) {
+            Text(
+                "Hosts ${snapshot.hosts.size}・Services ${snapshot.services.size}・" +
+                    "Vulnerabilities ${snapshot.vulnerabilities.size}・執行紀錄 ${snapshot.executions.size}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.refreshErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.exportErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         state.saveMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
 
         Button(
             onClick = onExport,
-            enabled = !state.loading,
+            enabled = snapshot != null && !state.loading,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("產生並選擇儲存位置")
+            Text("產生安全版報告並選擇儲存位置")
         }
     }
 }

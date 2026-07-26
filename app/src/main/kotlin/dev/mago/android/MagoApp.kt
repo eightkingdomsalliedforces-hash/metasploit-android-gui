@@ -93,6 +93,7 @@ fun MagoApp(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onReportEnsurePreviewLoaded: () -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
@@ -166,6 +167,7 @@ fun MagoApp(
                     onModuleConfirmRun = onModuleConfirmRun,
                     onModuleCancelRun = onModuleCancelRun,
                     onModuleRefreshResult = onModuleRefreshResult,
+                    onReportEnsurePreviewLoaded = onReportEnsurePreviewLoaded,
                     onReportFormatSelected = onReportFormatSelected,
                     onReportExport = onReportExport,
                     onTerminalStart = onTerminalStart,
@@ -252,6 +254,7 @@ private fun AppNavHost(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onReportEnsurePreviewLoaded: () -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
@@ -317,6 +320,7 @@ private fun AppNavHost(
         composable(MagoDestination.Reports.route) {
             ReportsScreen(
                 state = reportsState,
+                onEnsurePreviewLoaded = onReportEnsurePreviewLoaded,
                 onFormatSelected = onReportFormatSelected,
                 onExport = onReportExport,
             )
