@@ -24,7 +24,10 @@ class MainActivity : ComponentActivity() {
         DashboardViewModel.factory(container.bootstrapCoordinator)
     }
     private val modulesViewModel by viewModels<ModulesViewModel> {
-        ModulesViewModel.factory(container.metasploitModuleRepository)
+        ModulesViewModel.factory(
+            repository = container.metasploitModuleRepository,
+            localStore = container.moduleLocalStore,
+        )
     }
     private val terminalViewModel by viewModels<TerminalViewModel> {
         TerminalViewModel.factory(container.metasploitConsoleRepository)
