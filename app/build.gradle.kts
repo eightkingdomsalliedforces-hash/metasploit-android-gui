@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":feature:dashboard"))
     implementation(project(":feature:diagnostics"))
     implementation(project(":feature:modules"))
+    implementation(project(":feature:operations"))
     implementation(project(":feature:terminal"))
 
     implementation(libs.core.ktx)
