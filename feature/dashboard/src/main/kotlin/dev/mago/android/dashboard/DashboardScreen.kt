@@ -1,5 +1,6 @@
 package dev.mago.android.dashboard
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import dev.mago.android.model.MetasploitJobSummary
 import dev.mago.android.model.MetasploitSessionSummary
 import dev.mago.android.model.ServiceStatus
 import dev.mago.android.ui.components.ServiceStatusCard
+import dev.mago.android.ui.theme.MagoThemeMode
 import java.text.DateFormat
 import java.util.Date
 
@@ -50,12 +53,20 @@ data class DashboardUiState(
     val appLockEnabled: Boolean = false,
     val appLockSettingBusy: Boolean = false,
     val appLockError: String? = null,
+    val themeMode: MagoThemeMode = MagoThemeMode.SYSTEM,
+    val fontScalePercent: Int = 100,
+    val reducedMotion: Boolean = false,
+    val displayPreferencesSaving: Boolean = false,
+    val displayPreferencesError: String? = null,
     val onRefreshOperations: () -> Unit = {},
     val onSelectJob: (String) -> Unit = {},
     val onRequestMaintenance: (MaintenanceAction) -> Unit = {},
     val onConfirmMaintenance: () -> Unit = {},
     val onCancelMaintenance: () -> Unit = {},
     val onRequestAppLockChange: (Boolean) -> Unit = {},
+    val onThemeModeChanged: (MagoThemeMode) -> Unit = {},
+    val onFontScaleChanged: (Int) -> Unit = {},
+    val onReducedMotionChanged: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -120,6 +131,45 @@ fun DashboardScreen(
         )
 
         HorizontalDivider()
+        Text("顯示與無障礙", style = MaterialTheme.typography.titleLarge)
+        Text("設定會立即套用到鎖定畫面與所有功能頁。")
+        Text("主題", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MagoThemeMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = state.themeMode == mode,
+                    onClick = { state.onThemeModeChanged(mode) },
+                    enabled = !state.displayPreferencesSaving,
+                    label = { Text(mode.displayName()) },
+                )
+            }
+        }
+        Text("字體大小", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf(100, 130, 160, 200).forEach { percent ->
+                FilterChip(
+                    selected = state.fontScalePercent == percent,
+                    onClick = { state.onFontScaleChanged(percent) },
+                    enabled = !state.displayPreferencesSaving,
+                    label = { Text("$percent%") },
+                )
+            }
+        }
+        FilterChip(
+            selected = state.reducedMotion,
+            onClick = { state.onReducedMotionChanged(!state.reducedMotion) },
+            enabled = !state.displayPreferencesSaving,
+            label = { Text(if (state.reducedMotion) "減少動畫：開" else "減少動畫：關") },
+        )
+        state.displayPreferencesError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+        HorizontalDivider()
         Text("安全性", style = MaterialTheme.typography.titleLarge)
         Card(Modifier.fillMaxWidth()) {
             Column(
@@ -167,7 +217,7 @@ fun DashboardScreen(
             }
         }
         if (state.maintenanceLoading) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (!state.reducedMotion) LinearProgressIndicator(Modifier.fillMaxWidth())
             Text("維護操作執行中，請保持 App 與 Termux 可用。")
         }
         state.maintenanceMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
@@ -190,31 +240,34 @@ fun DashboardScreen(
             }
         }
         Text("唯讀檢視；不提供 Session 命令、停止或批量操作。")
-        if (state.operationsLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.operationsLoading && !state.reducedMotion) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        if (state.operationsLoading && state.reducedMotion) Text("正在載入 Jobs 與 Sessions")
         state.operationsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         Text("Jobs（${state.jobs.size}）", style = MaterialTheme.typography.titleMedium)
-        if (!state.operationsLoading && state.jobs.isEmpty()) {
-            Text("目前沒有執行中的 Job")
-        }
+        if (!state.operationsLoading && state.jobs.isEmpty()) Text("目前沒有執行中的 Job")
         state.jobs.forEach { job -> JobCard(job, state.onSelectJob) }
         state.selectedJob?.let { job -> JobDetailCard(job) }
 
         Text("Sessions（${state.sessions.size}）", style = MaterialTheme.typography.titleMedium)
-        if (!state.operationsLoading && state.sessions.isEmpty()) {
-            Text("目前沒有 Session")
-        }
+        if (!state.operationsLoading && state.sessions.isEmpty()) Text("目前沒有 Session")
         state.sessions.forEach { session -> SessionCard(session) }
     }
+}
+
+private fun MagoThemeMode.displayName(): String = when (this) {
+    MagoThemeMode.SYSTEM -> "跟隨系統"
+    MagoThemeMode.LIGHT -> "淺色"
+    MagoThemeMode.DARK -> "深色"
+    MagoThemeMode.AMOLED -> "AMOLED"
 }
 
 @Composable
 private fun JobCard(job: MetasploitJobSummary, onSelect: (String) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Job #${job.id}", style = MaterialTheme.typography.titleMedium)
             Text(job.name)
             OutlinedButton(onClick = { onSelect(job.id) }) { Text("查看詳情") }
@@ -225,10 +278,7 @@ private fun JobCard(job: MetasploitJobSummary, onSelect: (String) -> Unit) {
 @Composable
 private fun JobDetailCard(job: MetasploitJobInfo) {
     Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Job #${job.id} 詳情", style = MaterialTheme.typography.titleMedium)
             Text(job.name)
             job.startTimeEpochSeconds?.let {
@@ -237,9 +287,7 @@ private fun JobDetailCard(job: MetasploitJobInfo) {
             job.uriPath?.let { Text("URI：$it") }
             if (job.datastore.isNotEmpty()) {
                 Text("Datastore", style = MaterialTheme.typography.labelLarge)
-                job.datastore.toSortedMap().forEach { (name, value) ->
-                    Text("$name：$value")
-                }
+                job.datastore.toSortedMap().forEach { (name, value) -> Text("$name：$value") }
             }
         }
     }
@@ -248,10 +296,7 @@ private fun JobDetailCard(job: MetasploitJobInfo) {
 @Composable
 private fun SessionCard(session: MetasploitSessionSummary) {
     Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Session #${session.id}", style = MaterialTheme.typography.titleMedium)
             Text(listOf(session.type, session.platform, session.architecture).filterNotNull().joinToString(" · "))
             if (session.description.isNotBlank()) Text(session.description)
