@@ -12,4 +12,7 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.compose.material3)
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
+    testImplementation(libs.coroutines.test)
 }

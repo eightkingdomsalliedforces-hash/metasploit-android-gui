@@ -82,19 +82,22 @@ class MessagePackRpcCodec {
         ValueType.MAP -> {
             val converted = LinkedHashMap<String, RpcValue>()
             value.asMapValue().map().forEach { (key, item) ->
-                if (!key.isStringValue) {
-                    throw RpcCodecException(
-                        "RPC_UNSUPPORTED_MAP_KEY",
-                        "RPC response map keys must be strings",
-                    )
-                }
-                converted[key.asStringValue().asString()] = convert(item)
+                converted[key.mapKey()] = convert(item)
             }
             RpcValue.MapValue(converted)
         }
         ValueType.EXTENSION -> throw RpcCodecException(
             "RPC_UNSUPPORTED_VALUE",
             "MessagePack extension values are not supported",
+        )
+    }
+
+    private fun Value.mapKey(): String = when {
+        isStringValue -> asStringValue().asString()
+        isIntegerValue -> asIntegerValue().toLong().toString()
+        else -> throw RpcCodecException(
+            "RPC_UNSUPPORTED_MAP_KEY",
+            "RPC response map keys must be strings or integers",
         )
     }
 }

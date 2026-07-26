@@ -21,7 +21,10 @@ class MainActivity : ComponentActivity() {
         OnboardingViewModel.factory(container.bootstrapCoordinator)
     }
     private val dashboardViewModel by viewModels<DashboardViewModel> {
-        DashboardViewModel.factory(container.bootstrapCoordinator)
+        DashboardViewModel.factory(
+            coordinator = container.bootstrapCoordinator,
+            operationsRepository = container.metasploitOperationsRepository,
+        )
     }
     private val modulesViewModel by viewModels<ModulesViewModel> {
         ModulesViewModel.factory(
