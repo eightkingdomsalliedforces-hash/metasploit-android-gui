@@ -25,8 +25,8 @@ class ModuleRunValidator {
                 if (option.required) errors[option.name] = "此欄位為必填"
                 return@forEach
             }
-            if (value.length > MAX_VALUE_LENGTH) {
-                errors[option.name] = "內容不可超過 16 KiB"
+            if (value.utf8Size() > MAX_VALUE_BYTES) {
+                errors[option.name] = "內容不可超過 8 KiB"
                 return@forEach
             }
             if (value.any(Char::isISOControl)) {
@@ -68,7 +68,11 @@ class ModuleRunValidator {
         values.forEach { (name, raw) ->
             if (options.none { it.name == name }) {
                 val value = raw.trim()
-                if (value.isNotEmpty() && value.length <= MAX_VALUE_LENGTH && value.none(Char::isISOControl)) {
+                if (
+                    value.isNotEmpty() &&
+                    value.utf8Size() <= MAX_VALUE_BYTES &&
+                    value.none(Char::isISOControl)
+                ) {
                     normalized[name] = value
                 }
             }
@@ -83,9 +87,15 @@ class ModuleRunValidator {
             .toSortedMap()
             .mapValues { (name, value) -> if (isSensitive(name)) MASK else value }
 
-    fun isSensitive(name: String): Boolean = SENSITIVE_MARKERS.any { marker ->
-        name.contains(marker, ignoreCase = true)
+    fun isSensitive(name: String): Boolean {
+        val upper = name.uppercase()
+        val tokens = upper.split(NON_IDENTIFIER).filter(String::isNotEmpty)
+        return tokens.any { it in SENSITIVE_TOKENS } ||
+            upper.endsWith("PASS") ||
+            upper.endsWith("PASSWORD")
     }
+
+    private fun String.utf8Size(): Int = toByteArray(Charsets.UTF_8).size
 
     private fun normalizeBoolean(value: String): String? = when (value.lowercase()) {
         "true", "1", "yes", "on" -> "true"
@@ -94,9 +104,10 @@ class ModuleRunValidator {
     }
 
     private companion object {
-        const val MAX_VALUE_LENGTH = 16 * 1024
+        const val MAX_VALUE_BYTES = 8 * 1024
         const val MASK = "••••••••"
         val INTEGER_TYPES = setOf("int", "integer", "port")
-        val SENSITIVE_MARKERS = setOf("PASS", "PASSWORD", "TOKEN", "KEY", "SECRET")
+        val SENSITIVE_TOKENS = setOf("PASS", "PASSWORD", "TOKEN", "KEY", "SECRET", "CREDENTIAL")
+        val NON_IDENTIFIER = Regex("[^A-Z0-9]+")
     }
 }
