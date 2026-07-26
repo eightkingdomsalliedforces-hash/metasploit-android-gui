@@ -12,13 +12,18 @@ import dev.mago.android.installation.InstallationStateRepository
 import dev.mago.android.installation.TermuxGateway
 import dev.mago.android.metasploit.MetasploitConnectionRepository
 import dev.mago.android.metasploit.MetasploitConsoleRepository
+import dev.mago.android.metasploit.MetasploitJobRepository
 import dev.mago.android.metasploit.MetasploitModuleRepository
+import dev.mago.android.metasploit.MetasploitSessionRepository
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
+import dev.mago.android.rpc.MetasploitJobRepositoryImpl
 import dev.mago.android.rpc.MetasploitModuleRepositoryImpl
+import dev.mago.android.rpc.MetasploitSessionRepositoryImpl
 import dev.mago.android.rpc.OkHttpRpcTransport
 import dev.mago.android.rpc.RpcTransport
+import dev.mago.android.rpc.SessionIoCoordinator
 import dev.mago.android.security.AndroidKeystoreSecretStore
 import dev.mago.android.security.InMemoryRpcTokenStore
 import dev.mago.android.security.RpcEndpointPolicy
@@ -40,9 +45,12 @@ class AppContainer(context: Context) {
 
     val rpcTokenStore: RpcTokenStore = InMemoryRpcTokenStore()
     val secretStore: SecretStore = AndroidKeystoreSecretStore(appContext)
+    private val sessionIoCoordinator = SessionIoCoordinator()
     val rpcTransport: RpcTransport = OkHttpRpcTransport(
         endpointPolicy = RpcEndpointPolicy(),
-        client = OkHttpClient(),
+        client = OkHttpClient.Builder()
+            .retryOnConnectionFailure(false)
+            .build(),
         codec = MessagePackRpcCodec(),
         dispatcherProvider = dispatcherProvider,
     )
@@ -52,6 +60,10 @@ class AppContainer(context: Context) {
         MetasploitModuleRepositoryImpl(rpcTransport, rpcTokenStore)
     val metasploitConsoleRepository: MetasploitConsoleRepository =
         MetasploitConsoleRepositoryImpl(rpcTransport, rpcTokenStore)
+    val metasploitJobRepository: MetasploitJobRepository =
+        MetasploitJobRepositoryImpl(rpcTransport, rpcTokenStore)
+    val metasploitSessionRepository: MetasploitSessionRepository =
+        MetasploitSessionRepositoryImpl(rpcTransport, rpcTokenStore, sessionIoCoordinator)
     val termuxGateway: TermuxGateway = TermuxGatewayImpl(appContext, dispatcherProvider)
     val bootstrapCoordinator: BootstrapCoordinator = BootstrapCoordinatorImpl(
         termuxGateway = termuxGateway,
