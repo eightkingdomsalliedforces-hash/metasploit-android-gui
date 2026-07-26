@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,79 +33,84 @@ fun InventoryScreen(
     onWorkspaceSelected: (String) -> Unit,
     onTabSelected: (InventoryTab) -> Unit,
 ) {
-    Column(
+    LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column {
-                Text("資產庫", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    "唯讀顯示 Metasploit Database；不會觸發掃描或修改資料。",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text("資產庫", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "唯讀顯示 Metasploit Database；不會觸發掃描或修改資料。",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                OutlinedButton(onClick = onRefresh, enabled = !state.loading) { Text("重新整理") }
             }
-            OutlinedButton(onClick = onRefresh, enabled = !state.loading) { Text("重新整理") }
         }
 
         if (state.workspaces.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                state.workspaces.forEach { workspace ->
-                    FilterChip(
-                        selected = workspace.name == state.selectedWorkspace,
-                        onClick = { onWorkspaceSelected(workspace.name) },
-                        label = { Text(workspace.name) },
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.workspaces.forEach { workspace ->
+                        FilterChip(
+                            selected = workspace.name == state.selectedWorkspace,
+                            onClick = { onWorkspaceSelected(workspace.name) },
+                            label = { Text(workspace.name) },
+                            enabled = !state.loading,
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            TabRow(selectedTabIndex = state.selectedTab.ordinal) {
+                InventoryTab.entries.forEach { tab ->
+                    Tab(
+                        selected = tab == state.selectedTab,
+                        onClick = { onTabSelected(tab) },
+                        text = { Text(tab.label) },
                         enabled = !state.loading,
                     )
                 }
             }
         }
 
-        TabRow(selectedTabIndex = state.selectedTab.ordinal) {
-            InventoryTab.entries.forEach { tab ->
-                Tab(
-                    selected = tab == state.selectedTab,
-                    onClick = { onTabSelected(tab) },
-                    text = { Text(tab.label) },
-                    enabled = !state.loading,
-                )
-            }
+        if (state.loading) {
+            item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         }
-
-        if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        state.errorMessage?.let {
-            Text(it, color = MaterialTheme.colorScheme.error)
+        state.errorMessage?.let { message ->
+            item { Text(message, color = MaterialTheme.colorScheme.error) }
         }
-        Text(
-            "目前顯示 ${state.visibleCount} 筆；每類最多載入 ${InventoryViewModel.PAGE_LIMIT} 筆。",
-            style = MaterialTheme.typography.labelMedium,
-        )
-        HorizontalDivider()
+        item {
+            Text(
+                "目前顯示 ${state.visibleCount} 筆；每類最多載入 ${InventoryViewModel.PAGE_LIMIT} 筆。",
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        item { HorizontalDivider() }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when (state.selectedTab) {
-                InventoryTab.HOSTS -> items(state.hosts, key = { it.address }) { HostCard(it) }
-                InventoryTab.SERVICES -> items(
-                    state.services,
-                    key = { "${it.host}:${it.port}/${it.protocol}" },
-                ) { ServiceCard(it) }
-                InventoryTab.VULNERABILITIES -> items(
-                    state.vulnerabilities,
-                    key = { "${it.host}:${it.port}:${it.name}" },
-                ) { VulnerabilityCard(it) }
-            }
-            if (!state.loading && state.errorMessage == null && state.visibleCount == 0) {
-                item { Text("此 Workspace 目前沒有可顯示的資料。") }
-            }
+        when (state.selectedTab) {
+            InventoryTab.HOSTS -> items(state.hosts, key = { it.address }) { HostCard(it) }
+            InventoryTab.SERVICES -> items(
+                state.services,
+                key = { "${it.host}:${it.port}/${it.protocol}" },
+            ) { ServiceCard(it) }
+            InventoryTab.VULNERABILITIES -> items(
+                state.vulnerabilities,
+                key = { "${it.host}:${it.port}:${it.name}" },
+            ) { VulnerabilityCard(it) }
+        }
+        if (!state.loading && state.errorMessage == null && state.visibleCount == 0) {
+            item { Text("此 Workspace 目前沒有可顯示的資料。") }
         }
     }
 }
