@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dev.mago.android.common.AppResult
 import dev.mago.android.metasploit.MetasploitModuleRepository
 import dev.mago.android.metasploit.ModuleCatalogRepository
+import dev.mago.android.metasploit.ModuleExecutionHistoryRepository
+import dev.mago.android.metasploit.ModuleExecutionRecord
 import dev.mago.android.model.MetasploitModuleInfo
 import dev.mago.android.model.MetasploitModuleLaunch
 import dev.mago.android.model.MetasploitModuleRequest
@@ -34,6 +36,8 @@ data class ModulesUiState(
     val compatiblePayloads: List<String> = emptyList(),
     val favorites: Set<MetasploitModuleSummary> = emptySet(),
     val recent: List<MetasploitModuleSummary> = emptyList(),
+    val executionHistory: List<ModuleExecutionRecord> = emptyList(),
+    val activeCorrelationId: String? = null,
     val offline: Boolean = false,
     val confirmation: ModuleRunConfirmation? = null,
     val authorizationConfirmed: Boolean = false,
@@ -55,6 +59,13 @@ data class ModulesUiState(
     val selectedIsFavorite: Boolean
         get() = selectedSummary?.let(favorites::contains) == true
 
+    val selectedHistory: List<ModuleExecutionRecord>
+        get() = selected?.let { selectedInfo ->
+            executionHistory.filter {
+                it.request.type == selectedInfo.type && it.request.name == selectedInfo.name
+            }
+        }.orEmpty()
+
     val canCheck: Boolean
         get() = selected?.let {
             !offline && it.hasCheck &&
@@ -72,6 +83,7 @@ data class ModulesUiState(
 
 class ModulesViewModel(
     private val repository: MetasploitModuleRepository,
+    private val historyRepository: ModuleExecutionHistoryRepository? = null,
     private val validator: ModuleRunValidator = ModuleRunValidator(),
 ) : ViewModel() {
     private val catalogRepository = repository as? ModuleCatalogRepository
@@ -93,6 +105,13 @@ class ModulesViewModel(
             viewModelScope.launch {
                 catalog.observeRecent().collect { recent ->
                     _uiState.update { it.copy(recent = recent) }
+                }
+            }
+        }
+        historyRepository?.let { history ->
+            viewModelScope.launch {
+                history.observe().collect { records ->
+                    _uiState.update { it.copy(executionHistory = records) }
                 }
             }
         }
@@ -118,6 +137,7 @@ class ModulesViewModel(
                     authorizationConfirmed = false,
                     launch = null,
                     runResult = null,
+                    activeCorrelationId = null,
                 )
             }
             when (val result = repository.info(module.type, module.name)) {
@@ -227,20 +247,47 @@ class ModulesViewModel(
                 runErrorMessage = null,
                 launch = null,
                 runResult = null,
+                activeCorrelationId = null,
             )
         }
         viewModelScope.launch {
             val confirmedRequest = confirmation.request.copy(userConfirmed = true)
+            val correlationId = when (val history = historyRepository) {
+                null -> null
+                else -> when (
+                    val recorded = history.begin(
+                        action = confirmation.action,
+                        request = confirmedRequest,
+                        workspace = null,
+                        redactedParameters = confirmation.redactedOptions,
+                    )
+                ) {
+                    is AppResult.Failure -> {
+                        _uiState.update {
+                            it.copy(runLoading = false, runErrorMessage = recorded.error.userMessage)
+                        }
+                        return@launch
+                    }
+                    is AppResult.Success -> recorded.value
+                }
+            }
+            _uiState.update { it.copy(activeCorrelationId = correlationId) }
             val result = when (confirmation.action) {
                 MetasploitModuleRunAction.CHECK -> repository.check(confirmedRequest)
                 MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmedRequest)
             }
             when (result) {
-                is AppResult.Failure -> _uiState.update {
-                    it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                is AppResult.Failure -> {
+                    correlationId?.let { historyRepository?.markFailed(it) }
+                    _uiState.update {
+                        it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                    }
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, launch = result.value)
+                is AppResult.Success -> {
+                    correlationId?.let { historyRepository?.markLaunched(it, result.value) }
+                    _uiState.update {
+                        it.copy(runLoading = false, launch = result.value)
+                    }
                 }
             }
         }
@@ -255,8 +302,13 @@ class ModulesViewModel(
                 is AppResult.Failure -> _uiState.update {
                     it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, runResult = result.value)
+                is AppResult.Success -> {
+                    _uiState.value.activeCorrelationId?.let {
+                        historyRepository?.markResult(it, result.value)
+                    }
+                    _uiState.update {
+                        it.copy(runLoading = false, runResult = result.value)
+                    }
                 }
             }
         }
@@ -273,6 +325,7 @@ class ModulesViewModel(
                 authorizationConfirmed = false,
                 launch = null,
                 runResult = null,
+                activeCorrelationId = null,
                 runErrorMessage = null,
             )
         }
@@ -337,6 +390,7 @@ class ModulesViewModel(
                 loading = true,
                 favorites = current.favorites,
                 recent = current.recent,
+                executionHistory = current.executionHistory,
                 offline = current.offline,
             )
             when (val result = repository.list(type)) {
@@ -351,11 +405,13 @@ class ModulesViewModel(
     }
 
     companion object {
-        fun factory(repository: MetasploitModuleRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ModulesViewModel(repository) as T
-            }
+        fun factory(
+            repository: MetasploitModuleRepository,
+            historyRepository: ModuleExecutionHistoryRepository? = null,
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ModulesViewModel(repository, historyRepository) as T
+        }
     }
 }
