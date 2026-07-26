@@ -156,9 +156,10 @@ class ModulesViewModel(
             )
         }
         viewModelScope.launch {
+            val confirmedRequest = confirmation.request.copy(userConfirmed = true)
             val result = when (confirmation.action) {
-                MetasploitModuleRunAction.CHECK -> repository.check(confirmation.request)
-                MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmation.request)
+                MetasploitModuleRunAction.CHECK -> repository.check(confirmedRequest)
+                MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmedRequest)
             }
             when (result) {
                 is AppResult.Failure -> _uiState.update {
