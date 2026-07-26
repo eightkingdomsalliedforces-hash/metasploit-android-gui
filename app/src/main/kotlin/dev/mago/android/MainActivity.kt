@@ -11,6 +11,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.mago.android.dashboard.DashboardViewModel
 import dev.mago.android.modules.ModulesViewModel
 import dev.mago.android.onboarding.OnboardingViewModel
+import dev.mago.android.operations.OperationsViewModel
 import dev.mago.android.terminal.TerminalViewModel
 
 class MainActivity : ComponentActivity() {
@@ -29,6 +30,9 @@ class MainActivity : ComponentActivity() {
             localStore = container.moduleLocalStore,
         )
     }
+    private val operationsViewModel by viewModels<OperationsViewModel> {
+        OperationsViewModel.factory(container.metasploitOperationsRepository)
+    }
     private val terminalViewModel by viewModels<TerminalViewModel> {
         TerminalViewModel.factory(container.metasploitConsoleRepository)
     }
@@ -42,12 +46,14 @@ class MainActivity : ComponentActivity() {
             val installationState by onboardingViewModel.state.collectAsStateWithLifecycle()
             val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
             val modulesState by modulesViewModel.uiState.collectAsStateWithLifecycle()
+            val operationsState by operationsViewModel.uiState.collectAsStateWithLifecycle()
             val terminalState by terminalViewModel.uiState.collectAsStateWithLifecycle()
             val diagnostics by container.bootstrapCoordinator.diagnostics.collectAsStateWithLifecycle()
             MagoApp(
                 installationState = installationState,
                 dashboardState = dashboardState,
                 modulesState = modulesState,
+                operationsState = operationsState,
                 terminalState = terminalState,
                 diagnostics = diagnostics,
                 onRetry = onboardingViewModel::retry,
@@ -69,6 +75,10 @@ class MainActivity : ComponentActivity() {
                 onModuleConfirmRun = modulesViewModel::confirmRun,
                 onModuleCancelRun = modulesViewModel::cancelRun,
                 onModuleRefreshResult = modulesViewModel::refreshResult,
+                onOperationsTabSelected = operationsViewModel::selectTab,
+                onOperationsRefresh = operationsViewModel::refresh,
+                onOperationsJobSelected = operationsViewModel::selectJob,
+                onOperationsClearJob = operationsViewModel::clearJobSelection,
                 onTerminalStart = terminalViewModel::start,
                 onTerminalStop = terminalViewModel::stop,
                 onTerminalInputChanged = terminalViewModel::setInput,
