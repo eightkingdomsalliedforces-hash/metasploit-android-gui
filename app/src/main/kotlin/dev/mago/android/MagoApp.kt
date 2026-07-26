@@ -54,6 +54,7 @@ import dev.mago.android.reports.ReportsUiState
 import dev.mago.android.terminal.TerminalScreen
 import dev.mago.android.terminal.TerminalUiState
 import dev.mago.android.ui.theme.MagoTheme
+import dev.mago.android.ui.theme.MagoThemeMode
 
 @Composable
 fun MagoApp(
@@ -64,6 +65,9 @@ fun MagoApp(
     reportsState: ReportsUiState,
     terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
+    themeMode: MagoThemeMode,
+    fontScale: Float,
+    reducedMotion: Boolean,
     onRetry: () -> Unit,
     onOpenTermux: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
@@ -98,7 +102,7 @@ fun MagoApp(
     onTerminalRefresh: () -> Unit,
     onTerminalClear: () -> Unit,
 ) {
-    MagoTheme {
+    MagoTheme(mode = themeMode, fontScale = fontScale, reducedMotion = reducedMotion) {
         val navController = rememberNavController()
         val ready = installationState.stage == InstallationStage.READY
         LaunchedEffect(ready) {
@@ -113,6 +117,7 @@ fun MagoApp(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val availableWidth = maxWidth
             val wide = availableWidth >= 600.dp
+            val showBottomLabels = fontScale < 1.6f
             val navEntry by navController.currentBackStackEntryAsState()
             val current = navEntry?.destination
             val destinations = listOf(
@@ -195,7 +200,8 @@ fun MagoApp(
                                         selected = current?.hierarchy?.any { it.route == destination.route } == true,
                                         onClick = { navController.navigate(destination.route) { launchSingleTop = true } },
                                         icon = { Icon(icon, contentDescription = description) },
-                                        label = { Text(destination.label) },
+                                        label = if (showBottomLabels) ({ Text(destination.label) }) else null,
+                                        alwaysShowLabel = showBottomLabels,
                                     )
                                 }
                             }
