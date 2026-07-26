@@ -24,6 +24,9 @@ class MetasploitModuleRepositoryImpl(
     override suspend fun list(type: MetasploitModuleType): AppResult<List<MetasploitModuleSummary>> =
         token()?.let { service.list(it, type) } ?: notAuthenticated()
 
+    override suspend fun search(query: String): AppResult<List<MetasploitModuleSummary>> =
+        token()?.let { service.search(it, query) } ?: notAuthenticated()
+
     override suspend fun info(
         type: MetasploitModuleType,
         name: String,
@@ -33,6 +36,14 @@ class MetasploitModuleRepositoryImpl(
         type: MetasploitModuleType,
         name: String,
     ): AppResult<List<String>> = token()?.let { service.compatiblePayloads(it, type, name) } ?: notAuthenticated()
+
+    override suspend fun compatiblePayloads(
+        type: MetasploitModuleType,
+        name: String,
+        target: Int,
+    ): AppResult<List<String>> = token()?.let {
+        service.compatiblePayloads(it, type, name, target)
+    } ?: notAuthenticated()
 
     override suspend fun check(request: MetasploitModuleRequest): AppResult<MetasploitModuleLaunch> =
         token()?.let { service.check(it, request) } ?: notAuthenticated()
