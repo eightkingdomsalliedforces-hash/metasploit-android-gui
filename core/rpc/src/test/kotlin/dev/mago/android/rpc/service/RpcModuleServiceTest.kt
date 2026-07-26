@@ -50,6 +50,32 @@ class RpcModuleServiceTest {
     }
 
     @Test
+    fun `unconfirmed execute is rejected without a transport call`() = runTest {
+        val transport = FakeTransport(
+            RpcValue.MapValue(
+                mapOf(
+                    "job_id" to RpcValue.IntValue(17),
+                    "uuid" to RpcValue.StringValue("run-uuid"),
+                ),
+            ),
+        )
+        val service = RpcModuleService(transport)
+
+        val result = service.execute(
+            "token",
+            MetasploitModuleRequest(
+                type = MetasploitModuleType.EXPLOIT,
+                name = "multi/handler",
+                options = emptyMap(),
+                userConfirmed = false,
+            ),
+        )
+
+        assertThat(result).isInstanceOf(AppResult.Failure::class.java)
+        assertThat(transport.callCount).isEqualTo(0)
+    }
+
+    @Test
     fun `execute sends type name and option map in official argument order`() = runTest {
         val transport = FakeTransport(
             RpcValue.MapValue(
@@ -67,12 +93,14 @@ class RpcModuleServiceTest {
                 type = MetasploitModuleType.EXPLOIT,
                 name = "multi/handler",
                 options = linkedMapOf("LHOST" to "127.0.0.1", "LPORT" to "4444"),
+                userConfirmed = true,
             ),
         )
 
         val launch = (result as AppResult.Success).value
         assertThat(launch.jobId).isEqualTo(17)
         assertThat(launch.uuid).isEqualTo("run-uuid")
+        assertThat(transport.callCount).isEqualTo(1)
         assertThat(transport.lastMethod).isEqualTo(RpcMethod.MODULE_EXECUTE)
         assertThat(transport.lastArguments[0]).isEqualTo(RpcValue.StringValue("exploit"))
         assertThat(transport.lastArguments[1]).isEqualTo(RpcValue.StringValue("multi/handler"))
@@ -120,6 +148,7 @@ class RpcModuleServiceTest {
     }
 
     private class FakeTransport(private val response: RpcValue) : RpcTransport {
+        var callCount: Int = 0
         var lastMethod: RpcMethod? = null
         var lastArguments: List<RpcValue> = emptyList()
 
@@ -128,6 +157,7 @@ class RpcModuleServiceTest {
             token: String?,
             arguments: List<RpcValue>,
         ): AppResult<RpcValue> {
+            callCount += 1
             lastMethod = method
             lastArguments = arguments
             return AppResult.Success(response)
