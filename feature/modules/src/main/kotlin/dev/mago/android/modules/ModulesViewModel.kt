@@ -5,13 +5,18 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.mago.android.common.AppResult
 import dev.mago.android.metasploit.MetasploitModuleRepository
+import dev.mago.android.metasploit.ModuleExecutionRecord
+import dev.mago.android.metasploit.ModuleLocalStore
+import dev.mago.android.metasploit.NoOpModuleLocalStore
 import dev.mago.android.model.MetasploitModuleInfo
 import dev.mago.android.model.MetasploitModuleLaunch
 import dev.mago.android.model.MetasploitModuleRequest
 import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleRunResult
+import dev.mago.android.model.MetasploitModuleRunStatus
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +25,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ModuleRunConfirmation(
+    val correlationId: String,
     val action: MetasploitModuleRunAction,
     val request: MetasploitModuleRequest,
     val redactedOptions: Map<String, String>,
@@ -40,6 +46,8 @@ data class ModulesUiState(
     val authorizationConfirmed: Boolean = false,
     val launch: MetasploitModuleLaunch? = null,
     val runResult: MetasploitModuleRunResult? = null,
+    val executionHistory: List<ModuleExecutionRecord> = emptyList(),
+    val offlineCatalog: Boolean = false,
     val runLoading: Boolean = false,
     val loading: Boolean = false,
     val errorMessage: String? = null,
@@ -64,12 +72,17 @@ data class ModulesUiState(
 
 class ModulesViewModel(
     private val repository: MetasploitModuleRepository,
+    private val localStore: ModuleLocalStore = NoOpModuleLocalStore,
     private val validator: ModuleRunValidator = ModuleRunValidator(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
     private var searchJob: Job? = null
     private var payloadJob: Job? = null
+
+    init {
+        refreshHistory()
+    }
 
     fun selectType(type: MetasploitModuleType) {
         val current = _uiState.value
@@ -96,6 +109,7 @@ class ModulesViewModel(
     fun selectModule(module: MetasploitModuleSummary) {
         payloadJob?.cancel()
         viewModelScope.launch {
+            runCatching { localStore.recordOpened(module) }
             _uiState.update {
                 it.copy(
                     loading = true,
@@ -113,6 +127,7 @@ class ModulesViewModel(
                 }
                 is AppResult.Success -> {
                     val info = result.value
+                    runCatching { localStore.cacheInfo(info) }
                     val defaults = info.options.mapNotNull { option ->
                         option.defaultValue?.let { option.name to it }
                     }.toMap()
@@ -125,7 +140,7 @@ class ModulesViewModel(
                             compatiblePayloads = emptyList(),
                         )
                     }
-                    if (info.type == MetasploitModuleType.EXPLOIT || info.type == MetasploitModuleType.EVASION) {
+                    if (info.type in PAYLOAD_CAPABLE_TYPES) {
                         when (val payloads = repository.compatiblePayloads(info.type, info.name)) {
                             is AppResult.Failure -> Unit
                             is AppResult.Success -> _uiState.update { current ->
@@ -204,12 +219,49 @@ class ModulesViewModel(
                 MetasploitModuleRunAction.CHECK -> repository.check(confirmedRequest)
                 MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmedRequest)
             }
+            val now = System.currentTimeMillis()
             when (result) {
-                is AppResult.Failure -> _uiState.update {
-                    it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                is AppResult.Failure -> {
+                    persistExecution(
+                        ModuleExecutionRecord(
+                            correlationId = confirmation.correlationId,
+                            action = confirmation.action,
+                            type = confirmedRequest.type,
+                            name = confirmedRequest.name,
+                            status = MetasploitModuleRunStatus.ERRORED,
+                            jobId = null,
+                            uuid = null,
+                            redactedOptions = confirmation.redactedOptions,
+                            resultSummary = null,
+                            error = result.error.userMessage,
+                            createdAtEpochMillis = now,
+                            updatedAtEpochMillis = now,
+                        ),
+                    )
+                    _uiState.update {
+                        it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                    }
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, launch = result.value)
+                is AppResult.Success -> {
+                    persistExecution(
+                        ModuleExecutionRecord(
+                            correlationId = confirmation.correlationId,
+                            action = confirmation.action,
+                            type = confirmedRequest.type,
+                            name = confirmedRequest.name,
+                            status = MetasploitModuleRunStatus.RUNNING,
+                            jobId = result.value.jobId,
+                            uuid = result.value.uuid,
+                            redactedOptions = confirmation.redactedOptions,
+                            resultSummary = null,
+                            error = null,
+                            createdAtEpochMillis = now,
+                            updatedAtEpochMillis = now,
+                        ),
+                    )
+                    _uiState.update {
+                        it.copy(runLoading = false, launch = result.value)
+                    }
                 }
             }
         }
@@ -224,8 +276,20 @@ class ModulesViewModel(
                 is AppResult.Failure -> _uiState.update {
                     it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, runResult = result.value)
+                is AppResult.Success -> {
+                    runCatching {
+                        localStore.updateExecution(
+                            uuid = uuid,
+                            status = result.value.status,
+                            resultSummary = null,
+                            error = result.value.error,
+                            updatedAtEpochMillis = System.currentTimeMillis(),
+                        )
+                    }
+                    refreshHistoryNow()
+                    _uiState.update {
+                        it.copy(runLoading = false, runResult = result.value)
+                    }
                 }
             }
         }
@@ -257,7 +321,7 @@ class ModulesViewModel(
     private fun reloadPayloadsForTarget(rawTarget: String) {
         val target = rawTarget.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return
         val selected = _uiState.value.selected ?: return
-        if (selected.type !in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.EVASION)) return
+        if (selected.type !in PAYLOAD_CAPABLE_TYPES) return
         payloadJob?.cancel()
         payloadJob = viewModelScope.launch {
             when (val result = repository.compatiblePayloads(selected.type, selected.name, target)) {
@@ -286,7 +350,9 @@ class ModulesViewModel(
         searchJob?.cancel()
         val normalized = query.trim()
         if (normalized.isEmpty()) {
-            _uiState.update { it.copy(searchResults = emptyList(), searching = false, searchErrorMessage = null) }
+            _uiState.update {
+                it.copy(searchResults = emptyList(), searching = false, searchErrorMessage = null)
+            }
             return
         }
         searchJob = viewModelScope.launch {
@@ -296,21 +362,42 @@ class ModulesViewModel(
             val qualifiedQuery = "$normalized type:${type.rpcName}"
             when (val result = repository.search(qualifiedQuery)) {
                 is AppResult.Failure -> _uiState.update { current ->
-                    if (current.query.trim() == normalized && current.type == type) {
-                        current.copy(searching = false, searchErrorMessage = result.error.userMessage)
-                    } else {
+                    if (current.query.trim() != normalized || current.type != type) {
                         current
+                    } else {
+                        val fallback = current.modules.filter { summary ->
+                            summary.name.contains(normalized, ignoreCase = true) ||
+                                summary.displayName?.contains(normalized, ignoreCase = true) == true
+                        }
+                        if (fallback.isNotEmpty() || current.modules.isNotEmpty()) {
+                            current.copy(
+                                searching = false,
+                                searchResults = fallback,
+                                searchErrorMessage = null,
+                                offlineCatalog = true,
+                            )
+                        } else {
+                            current.copy(
+                                searching = false,
+                                searchErrorMessage = result.error.userMessage,
+                            )
+                        }
                     }
                 }
-                is AppResult.Success -> _uiState.update { current ->
-                    if (current.query.trim() == normalized && current.type == type) {
-                        current.copy(
-                            searching = false,
-                            searchResults = result.value.filter { it.type == type },
-                            searchErrorMessage = null,
-                        )
-                    } else {
-                        current
+                is AppResult.Success -> {
+                    val filtered = result.value.filter { it.type == type }
+                    runCatching { localStore.cacheModules(type, filtered) }
+                    _uiState.update { current ->
+                        if (current.query.trim() == normalized && current.type == type) {
+                            current.copy(
+                                searching = false,
+                                searchResults = filtered,
+                                searchErrorMessage = null,
+                                offlineCatalog = false,
+                            )
+                        } else {
+                            current
+                        }
                     }
                 }
             }
@@ -352,6 +439,7 @@ class ModulesViewModel(
                 runErrorMessage = null,
                 authorizationConfirmed = false,
                 confirmation = ModuleRunConfirmation(
+                    correlationId = UUID.randomUUID().toString(),
                     action = action,
                     request = request,
                     redactedOptions = validator.redactedSummary(validation.normalized),
@@ -380,31 +468,84 @@ class ModulesViewModel(
                 runResult = null,
                 loading = true,
                 errorMessage = null,
+                offlineCatalog = false,
                 runErrorMessage = null,
             )
         }
         viewModelScope.launch {
             when (val result = repository.list(type)) {
-                is AppResult.Failure -> _uiState.update { current ->
-                    if (current.type == type) current.copy(loading = false, errorMessage = result.error.userMessage)
-                    else current
+                is AppResult.Failure -> {
+                    val cached = runCatching { localStore.cachedModules(type) }.getOrDefault(emptyList())
+                    if (cached.isNotEmpty()) {
+                        _uiState.update { current ->
+                            if (current.type == type) {
+                                current.copy(
+                                    loading = false,
+                                    modules = cached,
+                                    offlineCatalog = true,
+                                    errorMessage = null,
+                                )
+                            } else {
+                                current
+                            }
+                        }
+                    } else {
+                        _uiState.update { current ->
+                            if (current.type == type) {
+                                current.copy(loading = false, errorMessage = result.error.userMessage)
+                            } else {
+                                current
+                            }
+                        }
+                    }
                 }
-                is AppResult.Success -> _uiState.update { current ->
-                    if (current.type == type) current.copy(loading = false, modules = result.value)
-                    else current
+                is AppResult.Success -> {
+                    runCatching { localStore.cacheModules(type, result.value) }
+                    _uiState.update { current ->
+                        if (current.type == type) {
+                            current.copy(
+                                loading = false,
+                                modules = result.value,
+                                offlineCatalog = false,
+                            )
+                        } else {
+                            current
+                        }
+                    }
                 }
             }
         }
     }
 
-    companion object {
-        private const val SEARCH_DEBOUNCE_MILLIS = 250L
+    private suspend fun persistExecution(record: ModuleExecutionRecord) {
+        runCatching { localStore.recordExecution(record) }
+        refreshHistoryNow()
+    }
 
-        fun factory(repository: MetasploitModuleRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ModulesViewModel(repository) as T
-            }
+    private fun refreshHistory() {
+        viewModelScope.launch { refreshHistoryNow() }
+    }
+
+    private suspend fun refreshHistoryNow() {
+        val history = runCatching { localStore.executionHistory(HISTORY_LIMIT) }.getOrDefault(emptyList())
+        _uiState.update { it.copy(executionHistory = history) }
+    }
+
+    companion object {
+        private const val HISTORY_LIMIT = 50
+        private const val SEARCH_DEBOUNCE_MILLIS = 250L
+        private val PAYLOAD_CAPABLE_TYPES = setOf(
+            MetasploitModuleType.EXPLOIT,
+            MetasploitModuleType.EVASION,
+        )
+
+        fun factory(
+            repository: MetasploitModuleRepository,
+            localStore: ModuleLocalStore = NoOpModuleLocalStore,
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ModulesViewModel(repository, localStore) as T
+        }
     }
 }
