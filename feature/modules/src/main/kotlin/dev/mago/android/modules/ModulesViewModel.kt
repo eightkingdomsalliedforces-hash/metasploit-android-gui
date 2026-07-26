@@ -5,19 +5,25 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.mago.android.common.AppResult
 import dev.mago.android.metasploit.MetasploitModuleRepository
+import dev.mago.android.metasploit.ModuleExecutionRecord
+import dev.mago.android.metasploit.ModuleLocalStore
+import dev.mago.android.metasploit.NoOpModuleLocalStore
 import dev.mago.android.model.MetasploitModuleInfo
 import dev.mago.android.model.MetasploitModuleLaunch
 import dev.mago.android.model.MetasploitModuleRequest
 import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleRunResult
+import dev.mago.android.model.MetasploitModuleRunStatus
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ModuleRunConfirmation(
+    val correlationId: String,
     val action: MetasploitModuleRunAction,
     val request: MetasploitModuleRequest,
     val redactedOptions: Map<String, String>,
@@ -35,6 +41,8 @@ data class ModulesUiState(
     val authorizationConfirmed: Boolean = false,
     val launch: MetasploitModuleLaunch? = null,
     val runResult: MetasploitModuleRunResult? = null,
+    val executionHistory: List<ModuleExecutionRecord> = emptyList(),
+    val offlineCatalog: Boolean = false,
     val runLoading: Boolean = false,
     val loading: Boolean = false,
     val errorMessage: String? = null,
@@ -61,10 +69,15 @@ data class ModulesUiState(
 
 class ModulesViewModel(
     private val repository: MetasploitModuleRepository,
+    private val localStore: ModuleLocalStore = NoOpModuleLocalStore,
     private val validator: ModuleRunValidator = ModuleRunValidator(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
+
+    init {
+        refreshHistory()
+    }
 
     fun selectType(type: MetasploitModuleType) {
         if (type == _uiState.value.type && _uiState.value.modules.isNotEmpty()) return
@@ -77,6 +90,7 @@ class ModulesViewModel(
 
     fun selectModule(module: MetasploitModuleSummary) {
         viewModelScope.launch {
+            runCatching { localStore.recordOpened(module) }
             _uiState.update {
                 it.copy(
                     loading = true,
@@ -94,6 +108,7 @@ class ModulesViewModel(
                 }
                 is AppResult.Success -> {
                     val info = result.value
+                    runCatching { localStore.cacheInfo(info) }
                     val defaults = info.options.mapNotNull { option ->
                         option.defaultValue?.let { option.name to it }
                     }.toMap()
@@ -182,12 +197,49 @@ class ModulesViewModel(
                 MetasploitModuleRunAction.CHECK -> repository.check(confirmedRequest)
                 MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmedRequest)
             }
+            val now = System.currentTimeMillis()
             when (result) {
-                is AppResult.Failure -> _uiState.update {
-                    it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                is AppResult.Failure -> {
+                    persistExecution(
+                        ModuleExecutionRecord(
+                            correlationId = confirmation.correlationId,
+                            action = confirmation.action,
+                            type = confirmedRequest.type,
+                            name = confirmedRequest.name,
+                            status = MetasploitModuleRunStatus.ERRORED,
+                            jobId = null,
+                            uuid = null,
+                            redactedOptions = confirmation.redactedOptions,
+                            resultSummary = null,
+                            error = result.error.userMessage,
+                            createdAtEpochMillis = now,
+                            updatedAtEpochMillis = now,
+                        ),
+                    )
+                    _uiState.update {
+                        it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
+                    }
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, launch = result.value)
+                is AppResult.Success -> {
+                    persistExecution(
+                        ModuleExecutionRecord(
+                            correlationId = confirmation.correlationId,
+                            action = confirmation.action,
+                            type = confirmedRequest.type,
+                            name = confirmedRequest.name,
+                            status = MetasploitModuleRunStatus.RUNNING,
+                            jobId = result.value.jobId,
+                            uuid = result.value.uuid,
+                            redactedOptions = confirmation.redactedOptions,
+                            resultSummary = null,
+                            error = null,
+                            createdAtEpochMillis = now,
+                            updatedAtEpochMillis = now,
+                        ),
+                    )
+                    _uiState.update {
+                        it.copy(runLoading = false, launch = result.value)
+                    }
                 }
             }
         }
@@ -202,8 +254,20 @@ class ModulesViewModel(
                 is AppResult.Failure -> _uiState.update {
                     it.copy(runLoading = false, runErrorMessage = result.error.userMessage)
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(runLoading = false, runResult = result.value)
+                is AppResult.Success -> {
+                    runCatching {
+                        localStore.updateExecution(
+                            uuid = uuid,
+                            status = result.value.status,
+                            resultSummary = null,
+                            error = result.value.error,
+                            updatedAtEpochMillis = System.currentTimeMillis(),
+                        )
+                    }
+                    refreshHistoryNow()
+                    _uiState.update {
+                        it.copy(runLoading = false, runResult = result.value)
+                    }
                 }
             }
         }
@@ -264,6 +328,7 @@ class ModulesViewModel(
                 runErrorMessage = null,
                 authorizationConfirmed = false,
                 confirmation = ModuleRunConfirmation(
+                    correlationId = UUID.randomUUID().toString(),
                     action = action,
                     request = request,
                     redactedOptions = validator.redactedSummary(validation.normalized),
@@ -274,24 +339,71 @@ class ModulesViewModel(
 
     private fun loadType(type: MetasploitModuleType) {
         viewModelScope.launch {
-            _uiState.value = ModulesUiState(type = type, loading = true)
+            _uiState.value = _uiState.value.copy(
+                type = type,
+                query = "",
+                modules = emptyList(),
+                selected = null,
+                loading = true,
+                errorMessage = null,
+                offlineCatalog = false,
+            )
             when (val result = repository.list(type)) {
-                is AppResult.Failure -> _uiState.update {
-                    it.copy(loading = false, errorMessage = result.error.userMessage)
+                is AppResult.Failure -> {
+                    val cached = runCatching { localStore.cachedModules(type) }.getOrDefault(emptyList())
+                    if (cached.isNotEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                loading = false,
+                                modules = cached,
+                                offlineCatalog = true,
+                                errorMessage = null,
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(loading = false, errorMessage = result.error.userMessage)
+                        }
+                    }
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(loading = false, modules = result.value)
+                is AppResult.Success -> {
+                    runCatching { localStore.cacheModules(type, result.value) }
+                    _uiState.update {
+                        it.copy(
+                            loading = false,
+                            modules = result.value,
+                            offlineCatalog = false,
+                        )
+                    }
                 }
             }
         }
     }
 
+    private suspend fun persistExecution(record: ModuleExecutionRecord) {
+        runCatching { localStore.recordExecution(record) }
+        refreshHistoryNow()
+    }
+
+    private fun refreshHistory() {
+        viewModelScope.launch { refreshHistoryNow() }
+    }
+
+    private suspend fun refreshHistoryNow() {
+        val history = runCatching { localStore.executionHistory(HISTORY_LIMIT) }.getOrDefault(emptyList())
+        _uiState.update { it.copy(executionHistory = history) }
+    }
+
     companion object {
-        fun factory(repository: MetasploitModuleRepository): ViewModelProvider.Factory =
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    ModulesViewModel(repository) as T
-            }
+        private const val HISTORY_LIMIT = 50
+
+        fun factory(
+            repository: MetasploitModuleRepository,
+            localStore: ModuleLocalStore = NoOpModuleLocalStore,
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                ModulesViewModel(repository, localStore) as T
+        }
     }
 }
