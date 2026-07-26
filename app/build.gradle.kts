@@ -16,6 +16,7 @@ dependencies {
     implementation(project(":feature:onboarding"))
     implementation(project(":feature:dashboard"))
     implementation(project(":feature:diagnostics"))
+    implementation(project(":feature:inventory"))
     implementation(project(":feature:modules"))
     implementation(project(":feature:terminal"))
 
