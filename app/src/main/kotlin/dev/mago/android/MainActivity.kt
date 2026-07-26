@@ -302,6 +302,7 @@ class MainActivity : FragmentActivity() {
             onModuleConfirmRun = modulesViewModel::confirmRun,
             onModuleCancelRun = modulesViewModel::cancelRun,
             onModuleRefreshResult = modulesViewModel::refreshResult,
+            onReportEnsurePreviewLoaded = reportsViewModel::ensurePreviewLoaded,
             onReportFormatSelected = reportsViewModel::selectFormat,
             onReportExport = reportsViewModel::requestExport,
             onTerminalStart = terminalViewModel::start,
