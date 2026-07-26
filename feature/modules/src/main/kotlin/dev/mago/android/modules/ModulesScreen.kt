@@ -39,17 +39,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.mago.android.metasploit.ModuleExecutionRecord
 import dev.mago.android.model.MetasploitModuleOption
 import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
 import dev.mago.android.model.rpc.RpcValue
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun ModulesScreen(
     state: ModulesUiState,
     onTypeSelected: (MetasploitModuleType) -> Unit,
     onQueryChanged: (String) -> Unit,
+    onListModeSelected: (ModuleListMode) -> Unit,
+    onToggleFavorite: (MetasploitModuleSummary) -> Unit,
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onBackToList: () -> Unit,
     onRetry: () -> Unit,
@@ -79,13 +84,11 @@ fun ModulesScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("模組：${confirmation.request.type.rpcName}/${confirmation.request.name}")
-                    Text("參數摘要中的敏感值已遮罩；此確認不會被記住。")
+                    Text("敏感參數已遮罩；此授權確認不會被記住。")
                     if (confirmation.redactedOptions.isEmpty()) {
                         Text("沒有非空白參數")
                     } else {
-                        confirmation.redactedOptions.forEach { (name, value) ->
-                            Text("$name：$value")
-                        }
+                        confirmation.redactedOptions.forEach { (name, value) -> Text("$name：$value") }
                     }
                     Row(
                         modifier = Modifier
@@ -109,9 +112,7 @@ fun ModulesScreen(
                     Text(if (confirmation.action == MetasploitModuleRunAction.CHECK) "確認檢查" else "確認執行")
                 }
             },
-            dismissButton = {
-                TextButton(onClick = onCancelRun) { Text("取消") }
-            },
+            dismissButton = { TextButton(onClick = onCancelRun) { Text("取消") } },
         )
     }
 
@@ -122,6 +123,7 @@ fun ModulesScreen(
             ModuleDetail(
                 state = state,
                 onBack = onBackToList,
+                onToggleFavorite = onToggleFavorite,
                 onOptionChanged = onOptionChanged,
                 onRequestCheck = onRequestCheck,
                 onRequestExecute = onRequestExecute,
@@ -134,6 +136,8 @@ fun ModulesScreen(
                     state = state,
                     onTypeSelected = onTypeSelected,
                     onQueryChanged = onQueryChanged,
+                    onListModeSelected = onListModeSelected,
+                    onToggleFavorite = onToggleFavorite,
                     onModuleSelected = onModuleSelected,
                     onRetry = onRetry,
                     modifier = Modifier.width(availableWidth * 0.42f).fillMaxHeight(),
@@ -144,14 +148,16 @@ fun ModulesScreen(
                             .width(availableWidth * 0.58f)
                             .fillMaxHeight()
                             .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text("選擇模組以查看詳細資料", style = MaterialTheme.typography.titleLarge)
-                        Text("模組執行前會顯示參數摘要並要求明確確認。")
+                        Text("模組執行前會顯示遮罩後摘要並要求明確確認。")
                     }
                 } else {
                     ModuleDetail(
                         state = state,
                         onBack = null,
+                        onToggleFavorite = onToggleFavorite,
                         onOptionChanged = onOptionChanged,
                         onRequestCheck = onRequestCheck,
                         onRequestExecute = onRequestExecute,
@@ -165,6 +171,8 @@ fun ModulesScreen(
                 state = state,
                 onTypeSelected = onTypeSelected,
                 onQueryChanged = onQueryChanged,
+                onListModeSelected = onListModeSelected,
+                onToggleFavorite = onToggleFavorite,
                 onModuleSelected = onModuleSelected,
                 onRetry = onRetry,
                 modifier = Modifier.fillMaxSize(),
@@ -178,6 +186,8 @@ private fun ModuleList(
     state: ModulesUiState,
     onTypeSelected: (MetasploitModuleType) -> Unit,
     onQueryChanged: (String) -> Unit,
+    onListModeSelected: (ModuleListMode) -> Unit,
+    onToggleFavorite: (MetasploitModuleSummary) -> Unit,
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier,
@@ -196,6 +206,26 @@ private fun ModuleList(
                 )
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = state.listMode == ModuleListMode.ALL,
+                onClick = { onListModeSelected(ModuleListMode.ALL) },
+                label = { Text("全部") },
+            )
+            FilterChip(
+                selected = state.listMode == ModuleListMode.FAVORITES,
+                onClick = { onListModeSelected(ModuleListMode.FAVORITES) },
+                label = { Text("收藏") },
+            )
+            FilterChip(
+                selected = state.listMode == ModuleListMode.RECENT,
+                onClick = { onListModeSelected(ModuleListMode.RECENT) },
+                label = { Text("最近") },
+            )
+        }
         OutlinedTextField(
             value = state.query,
             onValueChange = onQueryChanged,
@@ -203,6 +233,14 @@ private fun ModuleList(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (state.offlineCatalog) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("目前顯示離線快取", style = MaterialTheme.typography.titleSmall)
+                    Text("模組詳細資料與執行仍需要本機 RPC 連線。")
+                }
+            }
+        }
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.errorMessage?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
@@ -214,14 +252,19 @@ private fun ModuleList(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(state.visibleModules, key = { it.fullName }) { module ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onModuleSelected(module) },
-                ) {
-                    Column(Modifier.padding(12.dp)) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onModuleSelected(module) }
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         Text(module.name, style = MaterialTheme.typography.bodyLarge)
                         Text(module.type.displayName, style = MaterialTheme.typography.labelMedium)
+                        TextButton(onClick = { onToggleFavorite(module) }) {
+                            Text(if (module.fullName in state.favorites) "取消收藏" else "加入收藏")
+                        }
                     }
                 }
             }
@@ -233,6 +276,7 @@ private fun ModuleList(
 private fun ModuleDetail(
     state: ModulesUiState,
     onBack: (() -> Unit)?,
+    onToggleFavorite: (MetasploitModuleSummary) -> Unit,
     onOptionChanged: (String, String) -> Unit,
     onRequestCheck: () -> Unit,
     onRequestExecute: () -> Unit,
@@ -240,6 +284,7 @@ private fun ModuleDetail(
     modifier: Modifier,
 ) {
     val info = state.selected ?: return
+    val summary = MetasploitModuleSummary(info.type, info.name)
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -251,6 +296,9 @@ private fun ModuleDetail(
         }
         Text(info.displayName, style = MaterialTheme.typography.headlineSmall)
         Text(info.type.rpcName + "/" + info.name, style = MaterialTheme.typography.labelLarge)
+        OutlinedButton(onClick = { onToggleFavorite(summary) }) {
+            Text(if (summary.fullName in state.favorites) "取消收藏" else "加入收藏")
+        }
         info.rank?.let { Text("Rank：$it") }
         Text(info.description.ifBlank { "沒有描述" })
         if (info.platforms.isNotEmpty()) Text("平台：${info.platforms.joinToString()}")
@@ -290,14 +338,10 @@ private fun ModuleDetail(
         if (state.runLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.canCheck) {
-                OutlinedButton(onClick = onRequestCheck, enabled = !state.runLoading) {
-                    Text("執行檢查")
-                }
+                OutlinedButton(onClick = onRequestCheck, enabled = !state.runLoading) { Text("執行檢查") }
             }
             if (state.canExecute) {
-                Button(onClick = onRequestExecute, enabled = !state.runLoading) {
-                    Text("執行模組")
-                }
+                Button(onClick = onRequestExecute, enabled = !state.runLoading) { Text("執行模組") }
             }
         }
 
@@ -319,10 +363,33 @@ private fun ModuleDetail(
             }
         }
 
+        ModuleHistorySection(
+            history = state.executionHistory.filter { it.type == info.type && it.name == info.name },
+        )
+
         if (info.references.isNotEmpty()) {
             HorizontalDivider()
             Text("參考資料", style = MaterialTheme.typography.titleLarge)
             info.references.forEach { Text("${it.type}：${it.value}") }
+        }
+    }
+}
+
+@Composable
+private fun ModuleHistorySection(history: List<ModuleExecutionRecord>) {
+    if (history.isEmpty()) return
+    HorizontalDivider()
+    Text("執行紀錄", style = MaterialTheme.typography.titleLarge)
+    history.take(10).forEach { record ->
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${record.action.name} · ${record.status.name}", style = MaterialTheme.typography.titleSmall)
+                Text(formatTimestamp(record.updatedAtEpochMillis), style = MaterialTheme.typography.labelMedium)
+                record.jobId?.let { Text("Job ID：$it") }
+                record.uuid?.let { Text("UUID：$it") }
+                record.redactedOptions.forEach { (name, value) -> Text("$name：$value") }
+                record.error?.let { Text("錯誤：$it", color = MaterialTheme.colorScheme.error) }
+            }
         }
     }
 }
@@ -341,9 +408,7 @@ private fun OptionFields(
             value = state.optionValues[option.name].orEmpty(),
             onValueChange = { onOptionChanged(option.name, it) },
             label = { Text(option.name + if (option.required) " *" else "") },
-            supportingText = {
-                Text(error ?: option.description.ifBlank { option.type })
-            },
+            supportingText = { Text(error ?: option.description.ifBlank { option.type }) },
             isError = error != null,
             singleLine = option.type.lowercase() !in setOf("text", "string") ||
                 !option.description.contains("command", ignoreCase = true),
@@ -373,6 +438,9 @@ private fun OptionFields(
         }
     }
 }
+
+private fun formatTimestamp(epochMillis: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
 
 private fun RpcValue.displayText(): String = when (this) {
     RpcValue.Nil -> "無"

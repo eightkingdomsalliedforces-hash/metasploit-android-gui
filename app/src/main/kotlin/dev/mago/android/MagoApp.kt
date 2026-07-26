@@ -38,6 +38,7 @@ import dev.mago.android.installation.InstallationState
 import dev.mago.android.model.DiagnosticEntry
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
+import dev.mago.android.modules.ModuleListMode
 import dev.mago.android.modules.ModulesScreen
 import dev.mago.android.modules.ModulesUiState
 import dev.mago.android.navigation.MagoDestination
@@ -58,6 +59,8 @@ fun MagoApp(
     onRequestTermuxPermission: () -> Unit,
     onModuleTypeSelected: (MetasploitModuleType) -> Unit,
     onModuleQueryChanged: (String) -> Unit,
+    onModuleListModeSelected: (ModuleListMode) -> Unit,
+    onModuleToggleFavorite: (MetasploitModuleSummary) -> Unit,
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onModuleBack: () -> Unit,
     onModuleRetry: () -> Unit,
@@ -125,6 +128,8 @@ fun MagoApp(
                         onShowDiagnostics = { navController.navigate(MagoDestination.Diagnostics.route) },
                         onModuleTypeSelected = onModuleTypeSelected,
                         onModuleQueryChanged = onModuleQueryChanged,
+                        onModuleListModeSelected = onModuleListModeSelected,
+                        onModuleToggleFavorite = onModuleToggleFavorite,
                         onModuleSelected = onModuleSelected,
                         onModuleBack = onModuleBack,
                         onModuleRetry = onModuleRetry,
@@ -174,6 +179,8 @@ fun MagoApp(
                         onShowDiagnostics = { navController.navigate(MagoDestination.Diagnostics.route) },
                         onModuleTypeSelected = onModuleTypeSelected,
                         onModuleQueryChanged = onModuleQueryChanged,
+                        onModuleListModeSelected = onModuleListModeSelected,
+                        onModuleToggleFavorite = onModuleToggleFavorite,
                         onModuleSelected = onModuleSelected,
                         onModuleBack = onModuleBack,
                         onModuleRetry = onModuleRetry,
@@ -212,6 +219,8 @@ private fun AppNavHost(
     onShowDiagnostics: () -> Unit,
     onModuleTypeSelected: (MetasploitModuleType) -> Unit,
     onModuleQueryChanged: (String) -> Unit,
+    onModuleListModeSelected: (ModuleListMode) -> Unit,
+    onModuleToggleFavorite: (MetasploitModuleSummary) -> Unit,
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onModuleBack: () -> Unit,
     onModuleRetry: () -> Unit,
@@ -255,6 +264,8 @@ private fun AppNavHost(
                 state = modulesState,
                 onTypeSelected = onModuleTypeSelected,
                 onQueryChanged = onModuleQueryChanged,
+                onListModeSelected = onModuleListModeSelected,
+                onToggleFavorite = onModuleToggleFavorite,
                 onModuleSelected = onModuleSelected,
                 onBackToList = onModuleBack,
                 onRetry = onModuleRetry,
