@@ -46,7 +46,7 @@ class ReportsViewModelTest {
     }
 
     @Test
-    fun `initial preview load reads every bounded source once and stores one snapshot`() = runTest {
+    fun `initial preview load reads every bounded source once and stores one safe preview`() = runTest {
         val inventory = FakeInventoryRepository()
         val store = FakeModuleLocalStore()
         val builder = CapturingBuilder()
@@ -64,8 +64,8 @@ class ReportsViewModelTest {
         assertThat(store.historyCalls).isEqualTo(1)
         assertThat(store.lastHistoryLimit).isEqualTo(ReportsViewModel.RECORD_LIMIT)
         assertThat(builder.calls).isEqualTo(0)
-        assertThat(viewModel.uiState.value.previewSnapshot?.workspace?.name).isEqualTo("lab")
-        assertThat(viewModel.uiState.value.previewSnapshot?.generatedAtEpochMillis)
+        assertThat(viewModel.uiState.value.preview?.workspaceName).isEqualTo("lab")
+        assertThat(viewModel.uiState.value.preview?.generatedAtEpochMillis)
             .isEqualTo(1_700_000_000_000)
         assertThat(viewModel.uiState.value.initialLoading).isFalse()
     }
@@ -86,11 +86,11 @@ class ReportsViewModelTest {
         advanceUntilIdle()
 
         assertThat(inventory.currentCalls).isEqualTo(1)
-        assertThat(viewModel.uiState.value.previewSnapshot).isNotNull()
+        assertThat(viewModel.uiState.value.preview).isNotNull()
     }
 
     @Test
-    fun `ensure preview loaded is a no-op after a snapshot exists`() = runTest {
+    fun `ensure preview loaded is a no-op after a preview exists`() = runTest {
         val inventory = FakeInventoryRepository()
         val store = FakeModuleLocalStore()
         val viewModel = ReportsViewModel(inventory, store, CapturingBuilder())
@@ -108,7 +108,37 @@ class ReportsViewModelTest {
     }
 
     @Test
-    fun `initial source failure leaves no snapshot and performs no retry`() = runTest {
+    fun `selecting preview category changes only ui state`() = runTest {
+        val inventory = FakeInventoryRepository()
+        val store = FakeModuleLocalStore()
+        val viewModel = ReportsViewModel(inventory, store, CapturingBuilder())
+        viewModel.ensurePreviewLoaded()
+        advanceUntilIdle()
+        val callsBefore = listOf(
+            inventory.currentCalls,
+            inventory.hostCalls,
+            inventory.serviceCalls,
+            inventory.vulnerabilityCalls,
+            store.historyCalls,
+        )
+
+        viewModel.selectPreviewTab(ReportPreviewTab.EXECUTIONS)
+
+        assertThat(viewModel.uiState.value.selectedPreviewTab)
+            .isEqualTo(ReportPreviewTab.EXECUTIONS)
+        assertThat(
+            listOf(
+                inventory.currentCalls,
+                inventory.hostCalls,
+                inventory.serviceCalls,
+                inventory.vulnerabilityCalls,
+                store.historyCalls,
+            ),
+        ).isEqualTo(callsBefore)
+    }
+
+    @Test
+    fun `initial source failure leaves no preview and performs no retry`() = runTest {
         val inventory = FakeInventoryRepository(failServicesInitially = true)
         val store = FakeModuleLocalStore()
         val viewModel = ReportsViewModel(inventory, store, CapturingBuilder())
@@ -121,32 +151,32 @@ class ReportsViewModelTest {
         assertThat(inventory.serviceCalls).isEqualTo(1)
         assertThat(inventory.vulnerabilityCalls).isEqualTo(0)
         assertThat(store.historyCalls).isEqualTo(0)
-        assertThat(viewModel.uiState.value.previewSnapshot).isNull()
+        assertThat(viewModel.uiState.value.preview).isNull()
         assertThat(viewModel.uiState.value.refreshErrorMessage).isEqualTo("services unavailable")
         assertThat(viewModel.uiState.value.initialLoading).isFalse()
     }
 
     @Test
-    fun `refresh failure preserves the previous complete snapshot`() = runTest {
+    fun `refresh failure preserves the previous complete preview`() = runTest {
         val inventory = FakeInventoryRepository()
         val viewModel = ReportsViewModel(inventory, FakeModuleLocalStore(), CapturingBuilder())
 
         viewModel.ensurePreviewLoaded()
         advanceUntilIdle()
-        val original = viewModel.uiState.value.previewSnapshot
+        val original = viewModel.uiState.value.preview
 
         inventory.workspaceName = "new-lab"
         inventory.failServices = true
         viewModel.refreshPreview()
         advanceUntilIdle()
 
-        assertThat(viewModel.uiState.value.previewSnapshot).isSameInstanceAs(original)
+        assertThat(viewModel.uiState.value.preview).isSameInstanceAs(original)
         assertThat(viewModel.uiState.value.refreshing).isFalse()
         assertThat(viewModel.uiState.value.refreshErrorMessage).isEqualTo("services unavailable")
     }
 
     @Test
-    fun `export without a preview snapshot fails closed`() = runTest {
+    fun `export without a preview fails closed`() = runTest {
         val inventory = FakeInventoryRepository()
         val store = FakeModuleLocalStore()
         val builder = CapturingBuilder()
