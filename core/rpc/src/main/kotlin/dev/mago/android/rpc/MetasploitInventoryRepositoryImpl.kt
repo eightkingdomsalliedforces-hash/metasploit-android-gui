@@ -22,6 +22,15 @@ class MetasploitInventoryRepositoryImpl(
     override suspend fun workspaces(): AppResult<List<MetasploitWorkspaceSummary>> =
         token()?.let { service.workspaces(it) } ?: notAuthenticated()
 
+    override suspend fun currentWorkspace(): AppResult<MetasploitWorkspaceSummary> =
+        token()?.let { service.currentWorkspace(it) } ?: notAuthenticated()
+
+    override suspend fun addWorkspace(name: String): AppResult<Unit> =
+        token()?.let { service.addWorkspace(it, name) } ?: notAuthenticated()
+
+    override suspend fun setWorkspace(name: String): AppResult<Unit> =
+        token()?.let { service.setWorkspace(it, name) } ?: notAuthenticated()
+
     override suspend fun hosts(
         workspace: String,
         limit: Int,

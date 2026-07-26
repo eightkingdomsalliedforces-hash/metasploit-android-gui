@@ -10,15 +10,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,7 +36,51 @@ fun InventoryScreen(
     onRefresh: () -> Unit,
     onWorkspaceSelected: (String) -> Unit,
     onTabSelected: (InventoryTab) -> Unit,
+    onShowCreateWorkspace: () -> Unit,
+    onWorkspaceDraftChanged: (String) -> Unit,
+    onSubmitCreateWorkspace: () -> Unit,
+    onDismissCreateWorkspace: () -> Unit,
+    onSetActiveWorkspace: () -> Unit,
 ) {
+    if (state.createWorkspaceDialogVisible) {
+        AlertDialog(
+            onDismissRequest = onDismissCreateWorkspace,
+            title = { Text("新增 Workspace") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("建立後只會切換資產庫瀏覽選項，不會自動設為 Metasploit 作用中 Workspace。")
+                    OutlinedTextField(
+                        value = state.workspaceDraft,
+                        onValueChange = onWorkspaceDraftChanged,
+                        label = { Text("Workspace 名稱") },
+                        supportingText = {
+                            Text(state.workspaceValidationError ?: "英數字開頭；可使用句點、底線與連字號")
+                        },
+                        isError = state.workspaceValidationError != null,
+                        singleLine = true,
+                        enabled = !state.workspaceMutationLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    state.workspaceMutationError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onSubmitCreateWorkspace,
+                    enabled = !state.workspaceMutationLoading && state.workspaceDraft.isNotBlank(),
+                ) { Text("建立") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onDismissCreateWorkspace,
+                    enabled = !state.workspaceMutationLoading,
+                ) { Text("取消") }
+            },
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -42,14 +90,23 @@ fun InventoryScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column {
+                Column(Modifier.fillMaxWidth(0.55f)) {
                     Text("資產庫", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "唯讀顯示 Metasploit Database；不會觸發掃描或修改資料。",
+                        "資產內容保持唯讀；可建立與切換 Workspace，不會觸發掃描或修改資產紀錄。",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                OutlinedButton(onClick = onRefresh, enabled = !state.loading) { Text("重新整理") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onShowCreateWorkspace,
+                        enabled = !state.loading && !state.workspaceMutationLoading,
+                    ) { Text("新增") }
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        enabled = !state.loading && !state.workspaceMutationLoading,
+                    ) { Text("重新整理") }
+                }
             }
         }
 
@@ -60,14 +117,35 @@ fun InventoryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     state.workspaces.forEach { workspace ->
+                        val active = workspace.name == state.activeWorkspace?.name
                         FilterChip(
                             selected = workspace.name == state.selectedWorkspace,
                             onClick = { onWorkspaceSelected(workspace.name) },
-                            label = { Text(workspace.name) },
-                            enabled = !state.loading,
+                            label = { Text(if (active) "${workspace.name}（作用中）" else workspace.name) },
+                            enabled = !state.loading && !state.workspaceMutationLoading,
                         )
                     }
                 }
+            }
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Metasploit 作用中 Workspace：${state.activeWorkspace?.name ?: "未知"}",
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                val selected = state.selectedWorkspace
+                if (selected != null && selected != state.activeWorkspace?.name) {
+                    OutlinedButton(
+                        onClick = onSetActiveWorkspace,
+                        enabled = !state.loading && !state.workspaceMutationLoading,
+                    ) { Text("將 $selected 設為作用中") }
+                }
+                state.workspaceMutationError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
+                if (state.workspaceMutationLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
 
@@ -78,7 +156,7 @@ fun InventoryScreen(
                         selected = tab == state.selectedTab,
                         onClick = { onTabSelected(tab) },
                         text = { Text(tab.label) },
-                        enabled = !state.loading,
+                        enabled = !state.loading && !state.workspaceMutationLoading,
                     )
                 }
             }

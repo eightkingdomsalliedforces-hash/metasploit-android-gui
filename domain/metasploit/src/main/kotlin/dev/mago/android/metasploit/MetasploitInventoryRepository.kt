@@ -8,6 +8,9 @@ import dev.mago.android.model.MetasploitWorkspaceSummary
 
 interface MetasploitInventoryRepository {
     suspend fun workspaces(): AppResult<List<MetasploitWorkspaceSummary>>
+    suspend fun currentWorkspace(): AppResult<MetasploitWorkspaceSummary>
+    suspend fun addWorkspace(name: String): AppResult<Unit>
+    suspend fun setWorkspace(name: String): AppResult<Unit>
 
     suspend fun hosts(
         workspace: String,
