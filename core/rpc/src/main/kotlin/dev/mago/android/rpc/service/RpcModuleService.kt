@@ -92,6 +92,13 @@ class RpcModuleService(private val transport: RpcTransport) {
         method: RpcMethod,
         request: MetasploitModuleRequest,
     ): AppResult<MetasploitModuleLaunch> {
+        if (!request.userConfirmed) {
+            return invalid(
+                "RPC_MODULE_CONFIRMATION_REQUIRED",
+                "模組執行需要使用者明確確認",
+                retryable = false,
+            )
+        }
         if (request.name.isBlank()) return invalid("RPC_MODULE_NAME_INVALID", "模組名稱不可為空", retryable = false)
         val optionValues = request.options.mapValues { RpcValue.StringValue(it.value) }
         val arguments = listOf(
