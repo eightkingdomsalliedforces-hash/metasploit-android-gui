@@ -18,6 +18,9 @@ import dev.mago.android.metasploit.MetasploitInventoryRepository
 import dev.mago.android.metasploit.MetasploitModuleRepository
 import dev.mago.android.metasploit.MetasploitOperationsRepository
 import dev.mago.android.metasploit.ModuleLocalStore
+import dev.mago.android.reporting.DefaultReportDocumentBuilder
+import dev.mago.android.reporting.ReportDocumentBuilder
+import dev.mago.android.reporting.SafReportWriter
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
@@ -65,6 +68,11 @@ class AppContainer(context: Context) {
         catalogDao = database.moduleCatalogDao(),
         historyDao = database.moduleHistoryDao(),
         mapper = ModuleDatabaseMapper(),
+    )
+    val reportDocumentBuilder: ReportDocumentBuilder = DefaultReportDocumentBuilder()
+    val safReportWriter: SafReportWriter = SafReportWriter(
+        contentResolver = appContext.contentResolver,
+        dispatcherProvider = dispatcherProvider,
     )
     val metasploitConsoleRepository: MetasploitConsoleRepository =
         MetasploitConsoleRepositoryImpl(rpcTransport, rpcTokenStore)

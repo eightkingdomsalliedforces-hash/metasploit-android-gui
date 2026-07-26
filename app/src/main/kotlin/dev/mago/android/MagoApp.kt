@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Storage
@@ -47,6 +48,9 @@ import dev.mago.android.modules.ModulesScreen
 import dev.mago.android.modules.ModulesUiState
 import dev.mago.android.navigation.MagoDestination
 import dev.mago.android.onboarding.OnboardingRoute
+import dev.mago.android.reporting.ReportFormat
+import dev.mago.android.reports.ReportsScreen
+import dev.mago.android.reports.ReportsUiState
 import dev.mago.android.terminal.TerminalScreen
 import dev.mago.android.terminal.TerminalUiState
 import dev.mago.android.ui.theme.MagoTheme
@@ -57,6 +61,7 @@ fun MagoApp(
     dashboardState: DashboardUiState,
     inventoryState: InventoryUiState,
     modulesState: ModulesUiState,
+    reportsState: ReportsUiState,
     terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
@@ -84,6 +89,8 @@ fun MagoApp(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onReportFormatSelected: (ReportFormat) -> Unit,
+    onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -112,6 +119,7 @@ fun MagoApp(
                 Triple(MagoDestination.Dashboard, Icons.Default.Home, "首頁"),
                 Triple(MagoDestination.Modules, Icons.Default.Apps, "模組"),
                 Triple(MagoDestination.Inventory, Icons.Default.Storage, "資產"),
+                Triple(MagoDestination.Reports, Icons.Default.Description, "報告"),
                 Triple(MagoDestination.Terminal, Icons.Default.Code, "Console"),
                 Triple(MagoDestination.Diagnostics, Icons.Default.MonitorHeart, "診斷"),
             )
@@ -124,6 +132,7 @@ fun MagoApp(
                     dashboardState = dashboardState,
                     inventoryState = inventoryState,
                     modulesState = modulesState,
+                    reportsState = reportsState,
                     terminalState = terminalState,
                     diagnostics = diagnostics,
                     onRetry = onRetry,
@@ -152,6 +161,8 @@ fun MagoApp(
                     onModuleConfirmRun = onModuleConfirmRun,
                     onModuleCancelRun = onModuleCancelRun,
                     onModuleRefreshResult = onModuleRefreshResult,
+                    onReportFormatSelected = onReportFormatSelected,
+                    onReportExport = onReportExport,
                     onTerminalStart = onTerminalStart,
                     onTerminalStop = onTerminalStop,
                     onTerminalInputChanged = onTerminalInputChanged,
@@ -206,6 +217,7 @@ private fun AppNavHost(
     dashboardState: DashboardUiState,
     inventoryState: InventoryUiState,
     modulesState: ModulesUiState,
+    reportsState: ReportsUiState,
     terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
@@ -234,6 +246,8 @@ private fun AppNavHost(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onReportFormatSelected: (ReportFormat) -> Unit,
+    onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -292,6 +306,13 @@ private fun AppNavHost(
                 onSubmitCreateWorkspace = onInventorySubmitCreateWorkspace,
                 onDismissCreateWorkspace = onInventoryDismissCreateWorkspace,
                 onSetActiveWorkspace = onInventorySetActiveWorkspace,
+            )
+        }
+        composable(MagoDestination.Reports.route) {
+            ReportsScreen(
+                state = reportsState,
+                onFormatSelected = onReportFormatSelected,
+                onExport = onReportExport,
             )
         }
         composable(MagoDestination.Terminal.route) {

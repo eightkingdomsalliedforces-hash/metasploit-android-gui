@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:common"))
     implementation(project(":core:security"))
+    implementation(project(":core:reporting"))
     implementation(project(":domain:metasploit"))
     implementation(project(":core:model"))
     implementation(project(":domain:installation"))
@@ -18,6 +19,7 @@ dependencies {
     implementation(project(":feature:diagnostics"))
     implementation(project(":feature:inventory"))
     implementation(project(":feature:modules"))
+    implementation(project(":feature:reports"))
     implementation(project(":feature:terminal"))
 
     implementation(libs.core.ktx)
