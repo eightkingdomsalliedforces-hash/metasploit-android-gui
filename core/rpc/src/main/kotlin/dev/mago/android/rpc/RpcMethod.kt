@@ -37,6 +37,15 @@ value class RpcMethod(val value: String) {
         val MODULE_RUNNING_STATS = RpcMethod("module.running_stats")
         val MODULE_ACK = RpcMethod("module.ack")
 
+        val JOB_LIST = RpcMethod("job.list")
+        val JOB_INFO = RpcMethod("job.info")
+        val JOB_STOP = RpcMethod("job.stop")
+
+        val SESSION_LIST = RpcMethod("session.list")
+        val SESSION_STOP = RpcMethod("session.stop")
+        val SESSION_INTERACTIVE_READ = RpcMethod("session.interactive_read")
+        val SESSION_INTERACTIVE_WRITE = RpcMethod("session.interactive_write")
+
         val CONSOLE_CREATE = RpcMethod("console.create")
         val CONSOLE_READ = RpcMethod("console.read")
         val CONSOLE_WRITE = RpcMethod("console.write")
