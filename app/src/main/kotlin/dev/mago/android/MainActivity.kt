@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                 onModuleSelected = modulesViewModel::selectModule,
                 onModuleBack = modulesViewModel::clearSelection,
                 onModuleRetry = modulesViewModel::retry,
+                onModuleToggleFavorite = modulesViewModel::toggleFavorite,
                 onModuleOptionChanged = modulesViewModel::setOption,
                 onModuleRequestCheck = modulesViewModel::requestCheck,
                 onModuleRequestExecute = modulesViewModel::requestExecute,
