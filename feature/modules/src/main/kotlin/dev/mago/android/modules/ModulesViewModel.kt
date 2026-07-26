@@ -66,12 +66,12 @@ data class ModulesUiState(
         }
 
     val canCheck: Boolean
-        get() = selected?.let {
+        get() = !offlineCatalog && selected?.let {
             it.hasCheck && it.type in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.AUXILIARY)
         } == true
 
     val canExecute: Boolean
-        get() = selected?.type in setOf(
+        get() = !offlineCatalog && selected?.type in setOf(
             MetasploitModuleType.EXPLOIT,
             MetasploitModuleType.AUXILIARY,
             MetasploitModuleType.POST,
@@ -146,7 +146,9 @@ class ModulesViewModel(
                             compatiblePayloads = emptyList(),
                         )
                     }
-                    if (info.type == MetasploitModuleType.EXPLOIT || info.type == MetasploitModuleType.EVASION) {
+                    if (! _uiState.value.offlineCatalog &&
+                        (info.type == MetasploitModuleType.EXPLOIT || info.type == MetasploitModuleType.EVASION)
+                    ) {
                         when (val payloads = repository.compatiblePayloads(info.type, info.name)) {
                             is AppResult.Failure -> Unit
                             is AppResult.Success -> _uiState.update { current ->
@@ -202,6 +204,10 @@ class ModulesViewModel(
     fun confirmRun() {
         val current = _uiState.value
         val confirmation = current.confirmation ?: return
+        if (current.offlineCatalog) {
+            _uiState.update { it.copy(runErrorMessage = "離線快取不可執行模組") }
+            return
+        }
         if (!current.authorizationConfirmed) {
             _uiState.update { it.copy(runErrorMessage = "請先確認僅在授權環境執行") }
             return
@@ -218,27 +224,46 @@ class ModulesViewModel(
         }
         viewModelScope.launch {
             val confirmedRequest = confirmation.request.copy(userConfirmed = true)
+            val createdAt = System.currentTimeMillis()
+            val requestedRecord = ModuleExecutionRecord(
+                correlationId = confirmation.correlationId,
+                action = confirmation.action,
+                type = confirmedRequest.type,
+                name = confirmedRequest.name,
+                status = MetasploitModuleRunStatus.READY,
+                jobId = null,
+                uuid = null,
+                redactedOptions = confirmation.redactedOptions,
+                resultSummary = null,
+                error = null,
+                createdAtEpochMillis = createdAt,
+                updatedAtEpochMillis = createdAt,
+            )
+            try {
+                localStore.recordExecution(requestedRecord)
+                refreshHistoryNow()
+            } catch (_: Exception) {
+                _uiState.update {
+                    it.copy(
+                        runLoading = false,
+                        runErrorMessage = "無法保存稽核紀錄，已取消執行",
+                    )
+                }
+                return@launch
+            }
+
             val result = when (confirmation.action) {
                 MetasploitModuleRunAction.CHECK -> repository.check(confirmedRequest)
                 MetasploitModuleRunAction.EXECUTE -> repository.execute(confirmedRequest)
             }
-            val now = System.currentTimeMillis()
+            val updatedAt = System.currentTimeMillis()
             when (result) {
                 is AppResult.Failure -> {
                     persistExecution(
-                        ModuleExecutionRecord(
-                            correlationId = confirmation.correlationId,
-                            action = confirmation.action,
-                            type = confirmedRequest.type,
-                            name = confirmedRequest.name,
+                        requestedRecord.copy(
                             status = MetasploitModuleRunStatus.ERRORED,
-                            jobId = null,
-                            uuid = null,
-                            redactedOptions = confirmation.redactedOptions,
-                            resultSummary = null,
-                            error = result.error.userMessage,
-                            createdAtEpochMillis = now,
-                            updatedAtEpochMillis = now,
+                            error = result.error.errorCode,
+                            updatedAtEpochMillis = updatedAt,
                         ),
                     )
                     _uiState.update {
@@ -247,19 +272,11 @@ class ModulesViewModel(
                 }
                 is AppResult.Success -> {
                     persistExecution(
-                        ModuleExecutionRecord(
-                            correlationId = confirmation.correlationId,
-                            action = confirmation.action,
-                            type = confirmedRequest.type,
-                            name = confirmedRequest.name,
+                        requestedRecord.copy(
                             status = MetasploitModuleRunStatus.RUNNING,
                             jobId = result.value.jobId,
                             uuid = result.value.uuid,
-                            redactedOptions = confirmation.redactedOptions,
-                            resultSummary = null,
-                            error = null,
-                            createdAtEpochMillis = now,
-                            updatedAtEpochMillis = now,
+                            updatedAtEpochMillis = updatedAt,
                         ),
                     )
                     _uiState.update {
@@ -272,7 +289,7 @@ class ModulesViewModel(
 
     fun refreshResult() {
         val uuid = _uiState.value.launch?.uuid ?: return
-        if (_uiState.value.runLoading) return
+        if (_uiState.value.runLoading || _uiState.value.offlineCatalog) return
         _uiState.update { it.copy(runLoading = true, runErrorMessage = null) }
         viewModelScope.launch {
             when (val result = repository.result(uuid)) {
@@ -285,7 +302,7 @@ class ModulesViewModel(
                             uuid = uuid,
                             status = result.value.status,
                             resultSummary = null,
-                            error = result.value.error,
+                            error = result.value.error?.let { "RPC_MODULE_RESULT_ERROR" },
                             updatedAtEpochMillis = System.currentTimeMillis(),
                         )
                     }
@@ -321,6 +338,10 @@ class ModulesViewModel(
     private fun requestRun(action: MetasploitModuleRunAction) {
         val current = _uiState.value
         val selected = current.selected ?: return
+        if (current.offlineCatalog) {
+            _uiState.update { it.copy(runErrorMessage = "離線快取不可執行模組") }
+            return
+        }
         if (action == MetasploitModuleRunAction.CHECK && !current.canCheck) {
             _uiState.update { it.copy(runErrorMessage = "此模組不支援 Check") }
             return

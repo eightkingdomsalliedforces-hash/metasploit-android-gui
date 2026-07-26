@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import dev.mago.android.database.entity.AuditEventEntity
 import dev.mago.android.database.entity.ModuleExecutionEntity
 import dev.mago.android.database.entity.ModuleFavoriteEntity
@@ -38,4 +39,13 @@ interface ModuleHistoryDao {
 
     @Insert
     suspend fun insertAudit(entry: AuditEventEntity)
+
+    @Transaction
+    suspend fun recordExecutionAndAudit(
+        execution: ModuleExecutionEntity,
+        audit: AuditEventEntity,
+    ) {
+        upsertExecution(execution)
+        insertAudit(audit)
+    }
 }
