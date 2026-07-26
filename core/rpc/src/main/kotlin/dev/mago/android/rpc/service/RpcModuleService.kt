@@ -29,6 +29,27 @@ class RpcModuleService(private val transport: RpcTransport) {
         }
     }
 
+    suspend fun search(token: String, query: String): AppResult<List<MetasploitModuleSummary>> {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isEmpty()) {
+            return invalid("RPC_MODULE_SEARCH_QUERY_INVALID", "模組搜尋條件不可為空", retryable = false)
+        }
+        return when (
+            val response = transport.call(
+                RpcMethod.MODULE_SEARCH,
+                token,
+                listOf(RpcValue.StringValue(normalizedQuery)),
+            )
+        ) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> {
+                val items = (response.value as? RpcValue.ArrayValue)?.value
+                    ?: return invalid("RPC_MODULE_SEARCH_INVALID", "Metasploit 搜尋結果格式不正確")
+                AppResult.Success(items.mapNotNull(::parseSearchSummary).take(MAX_SEARCH_RESULTS))
+            }
+        }
+    }
+
     suspend fun info(
         token: String,
         type: MetasploitModuleType,
@@ -49,20 +70,36 @@ class RpcModuleService(private val transport: RpcTransport) {
         token: String,
         type: MetasploitModuleType,
         name: String,
+        target: Int? = null,
     ): AppResult<List<String>> {
+        if (name.isBlank()) return invalid("RPC_MODULE_NAME_INVALID", "模組名稱不可為空", retryable = false)
+        if (target != null && target < 0) {
+            return invalid("RPC_MODULE_TARGET_INVALID", "TARGET 不可為負數", retryable = false)
+        }
         val method = when (type) {
-            MetasploitModuleType.EXPLOIT -> RpcMethod.MODULE_COMPATIBLE_PAYLOADS
-            MetasploitModuleType.EVASION -> RpcMethod.MODULE_COMPATIBLE_EVASION_PAYLOADS
+            MetasploitModuleType.EXPLOIT -> if (target == null) {
+                RpcMethod.MODULE_COMPATIBLE_PAYLOADS
+            } else {
+                RpcMethod.MODULE_TARGET_COMPATIBLE_PAYLOADS
+            }
+            MetasploitModuleType.EVASION -> if (target == null) {
+                RpcMethod.MODULE_COMPATIBLE_EVASION_PAYLOADS
+            } else {
+                RpcMethod.MODULE_TARGET_COMPATIBLE_EVASION_PAYLOADS
+            }
             else -> return AppResult.Success(emptyList())
         }
-        val result = transport.call(method, token, listOf(RpcValue.StringValue(name)))
-        return when (result) {
+        val arguments = buildList {
+            add(RpcValue.StringValue(name))
+            target?.let { add(RpcValue.IntValue(it.toLong())) }
+        }
+        return when (val result = transport.call(method, token, arguments)) {
             is AppResult.Failure -> result
             is AppResult.Success -> {
                 val payloads = (result.value.mapOrNull()?.get("payloads") as? RpcValue.ArrayValue)?.value
                     ?.mapNotNull { (it as? RpcValue.StringValue)?.value }
                 if (payloads == null) invalid("RPC_COMPATIBLE_PAYLOADS_INVALID", "相容 Payload 格式不正確")
-                else AppResult.Success(payloads.sorted())
+                else AppResult.Success(payloads.distinct().sorted())
             }
         }
     }
@@ -110,6 +147,24 @@ class RpcModuleService(private val transport: RpcTransport) {
             is AppResult.Failure -> response
             is AppResult.Success -> parseLaunch(response.value)
         }
+    }
+
+    private fun parseSearchSummary(value: RpcValue): MetasploitModuleSummary? {
+        val map = value.mapOrNull() ?: return null
+        val type = map.string("type")?.let { rpcType ->
+            MetasploitModuleType.entries.firstOrNull { it.rpcName.equals(rpcType, ignoreCase = true) }
+        } ?: return null
+        val fullName = map.string("fullname")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val expectedPrefix = "${type.rpcName}/"
+        val name = fullName.removePrefix(expectedPrefix).takeIf { it != fullName && it.isNotBlank() } ?: return null
+        return MetasploitModuleSummary(
+            type = type,
+            name = name,
+            displayName = map.string("name"),
+            rank = map.string("rank"),
+            disclosureDate = map.string("disclosuredate"),
+            extraFields = map.filterKeys { it !in KNOWN_SEARCH_FIELDS },
+        )
     }
 
     private fun parseLaunch(value: RpcValue): AppResult<MetasploitModuleLaunch> {
@@ -228,6 +283,8 @@ class RpcModuleService(private val transport: RpcTransport) {
         )
 
     private companion object {
+        const val MAX_SEARCH_RESULTS = 500
+        val KNOWN_SEARCH_FIELDS = setOf("type", "name", "fullname", "rank", "disclosuredate")
         val KNOWN_INFO_FIELDS = setOf(
             "name", "fullname", "rank", "disclosuredate", "type", "author", "authors",
             "description", "license", "filepath", "arch", "platform", "privileged", "check",
