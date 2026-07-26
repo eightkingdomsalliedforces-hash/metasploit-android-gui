@@ -43,7 +43,7 @@ class DashboardViewModelTest {
     fun `initial load reads jobs and sessions once and job detail only on selection`() = runTest {
         val repository = FakeOperationsRepository()
         val viewModel = DashboardViewModel(FakeCoordinator(), repository)
-        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect() }
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
 
         advanceUntilIdle()
 
