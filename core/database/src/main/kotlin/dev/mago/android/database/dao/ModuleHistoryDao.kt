@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import dev.mago.android.database.entity.AuditEventEntity
 import dev.mago.android.database.entity.ModuleExecutionEntity
@@ -25,4 +26,13 @@ interface ModuleHistoryDao {
 
     @Query("SELECT * FROM audit_event ORDER BY createdAtEpochMillis DESC LIMIT :limit")
     fun observeAudit(limit: Int): Flow<List<AuditEventEntity>>
+
+    @Transaction
+    suspend fun record(
+        execution: ModuleExecutionEntity,
+        audit: AuditEventEntity,
+    ) {
+        upsertExecution(execution)
+        insertAudit(audit)
+    }
 }
