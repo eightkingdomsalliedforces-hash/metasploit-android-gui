@@ -19,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import dev.mago.android.model.ServiceStatus
 
@@ -40,7 +42,13 @@ fun ServiceStatusCard(
         ServiceStatus.PERMISSION_REQUIRED -> Icons.Default.Warning to "需要權限"
         ServiceStatus.UNKNOWN -> Icons.Default.Warning to "未知"
     }
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = statusText
+            },
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
