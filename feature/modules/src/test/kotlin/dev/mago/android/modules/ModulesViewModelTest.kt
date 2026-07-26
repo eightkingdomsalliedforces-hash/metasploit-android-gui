@@ -50,7 +50,7 @@ class ModulesViewModelTest {
     }
 
     @Test
-    fun `execute requires confirmation before sending a single request`() = runTest {
+    fun `execute requires authorization acknowledgement before sending exactly one request`() = runTest {
         val repository = FakeRepository()
         val viewModel = ModulesViewModel(repository)
         viewModel.selectModule(summary())
@@ -63,9 +63,29 @@ class ModulesViewModelTest {
 
         viewModel.confirmRun()
 
+        assertThat(repository.executeRequests).isEmpty()
+        assertThat(viewModel.uiState.value.confirmation).isNotNull()
+
+        viewModel.setAuthorizationConfirmed(true)
+        viewModel.confirmRun()
+
         assertThat(repository.executeRequests).hasSize(1)
         assertThat(repository.executeRequests.single().options["RHOSTS"]).isEqualTo("192.0.2.10")
+        assertThat(repository.executeRequests.single().userConfirmed).isTrue()
         assertThat(viewModel.uiState.value.launch?.uuid).isEqualTo("run-uuid")
+    }
+
+    @Test
+    fun `payload generation is not exposed as background module execution`() = runTest {
+        val repository = FakeRepository()
+        val viewModel = ModulesViewModel(repository)
+
+        viewModel.selectModule(summary(MetasploitModuleType.PAYLOAD))
+
+        assertThat(viewModel.uiState.value.canExecute).isFalse()
+        viewModel.requestExecute()
+        assertThat(viewModel.uiState.value.confirmation).isNull()
+        assertThat(repository.executeRequests).isEmpty()
     }
 
     @Test
@@ -75,6 +95,7 @@ class ModulesViewModelTest {
         viewModel.selectModule(summary())
         viewModel.setOption("RHOSTS", "192.0.2.10")
         viewModel.requestCheck()
+        viewModel.setAuthorizationConfirmed(true)
         viewModel.confirmRun()
 
         assertThat(repository.resultRequests).isEmpty()
@@ -86,7 +107,8 @@ class ModulesViewModelTest {
         assertThat(viewModel.uiState.value.runResult?.status).isEqualTo(MetasploitModuleRunStatus.COMPLETED)
     }
 
-    private fun summary() = MetasploitModuleSummary(MetasploitModuleType.EXPLOIT, "windows/example")
+    private fun summary(type: MetasploitModuleType = MetasploitModuleType.EXPLOIT) =
+        MetasploitModuleSummary(type, "windows/example")
 
     private class FakeRepository : MetasploitModuleRepository {
         val executeRequests = mutableListOf<MetasploitModuleRequest>()
@@ -106,20 +128,24 @@ class ModulesViewModelTest {
                 architectures = emptyList(),
                 authors = emptyList(),
                 privileged = false,
-                hasCheck = true,
+                hasCheck = type in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.AUXILIARY),
                 stance = "passive",
                 references = emptyList(),
-                options = listOf(
-                    MetasploitModuleOption(
-                        name = "RHOSTS",
-                        type = "address_range",
-                        required = true,
-                        advanced = false,
-                        description = "Authorized target",
-                        defaultValue = null,
-                        enums = emptyList(),
-                    ),
-                ),
+                options = if (type == MetasploitModuleType.PAYLOAD) {
+                    emptyList()
+                } else {
+                    listOf(
+                        MetasploitModuleOption(
+                            name = "RHOSTS",
+                            type = "address_range",
+                            required = true,
+                            advanced = false,
+                            description = "Authorized target",
+                            defaultValue = null,
+                            enums = emptyList(),
+                        ),
+                    )
+                },
                 extraFields = emptyMap(),
             ),
         )
