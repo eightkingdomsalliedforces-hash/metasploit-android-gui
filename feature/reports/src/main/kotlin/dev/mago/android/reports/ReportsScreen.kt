@@ -31,7 +31,7 @@ fun ReportsScreen(
         onEnsurePreviewLoaded()
     }
 
-    val snapshot = state.previewSnapshot
+    val preview = state.preview
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -69,13 +69,13 @@ fun ReportsScreen(
         }
 
         Text(
-            "作用中 Workspace：${snapshot?.workspace?.name ?: "尚未載入"}",
+            "作用中 Workspace：${preview?.workspaceName ?: "尚未載入"}",
             style = MaterialTheme.typography.labelLarge,
         )
-        if (snapshot != null) {
+        if (preview != null) {
             Text(
-                "Hosts ${snapshot.hosts.size}・Services ${snapshot.services.size}・" +
-                    "Vulnerabilities ${snapshot.vulnerabilities.size}・執行紀錄 ${snapshot.executions.size}",
+                "Hosts ${preview.hosts.size}・Services ${preview.services.size}・" +
+                    "Vulnerabilities ${preview.vulnerabilities.size}・執行紀錄 ${preview.executions.size}",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -86,7 +86,7 @@ fun ReportsScreen(
 
         Button(
             onClick = onExport,
-            enabled = snapshot != null && !state.loading,
+            enabled = preview != null && !state.loading,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("產生安全版報告並選擇儲存位置")
