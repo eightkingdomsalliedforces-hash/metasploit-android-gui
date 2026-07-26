@@ -34,10 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -60,6 +56,7 @@ fun ModulesScreen(
     onOptionChanged: (String, String) -> Unit,
     onRequestCheck: () -> Unit,
     onRequestExecute: () -> Unit,
+    onAuthorizationChanged: (Boolean) -> Unit,
     onConfirmRun: () -> Unit,
     onCancelRun: () -> Unit,
     onRefreshResult: () -> Unit,
@@ -68,11 +65,6 @@ fun ModulesScreen(
         if (state.modules.isEmpty() && !state.loading && state.errorMessage == null) onRetry()
     }
     state.confirmation?.let { confirmation ->
-        var authorized by rememberSaveable(
-            confirmation.request.type.rpcName,
-            confirmation.request.name,
-            confirmation.action.name,
-        ) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = onCancelRun,
             title = {
@@ -98,12 +90,12 @@ fun ModulesScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { authorized = !authorized },
+                            .clickable { onAuthorizationChanged(!state.authorizationConfirmed) },
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Checkbox(
-                            checked = authorized,
-                            onCheckedChange = { authorized = it },
+                            checked = state.authorizationConfirmed,
+                            onCheckedChange = onAuthorizationChanged,
                         )
                         Text("我確認僅在本人擁有或已獲明確授權的環境執行")
                     }
@@ -112,7 +104,7 @@ fun ModulesScreen(
             confirmButton = {
                 Button(
                     onClick = onConfirmRun,
-                    enabled = authorized && !state.runLoading,
+                    enabled = state.authorizationConfirmed && !state.runLoading,
                 ) {
                     Text(if (confirmation.action == MetasploitModuleRunAction.CHECK) "確認檢查" else "確認執行")
                 }
