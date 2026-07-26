@@ -3,6 +3,7 @@ package dev.mago.android
 import android.content.Context
 import dev.mago.android.common.DefaultDispatcherProvider
 import dev.mago.android.common.DispatcherProvider
+import dev.mago.android.database.CachedMetasploitModuleRepository
 import dev.mago.android.database.InstallationStateMapper
 import dev.mago.android.database.MagoDatabase
 import dev.mago.android.database.RoomInstallationStateRepository
@@ -13,6 +14,7 @@ import dev.mago.android.installation.TermuxGateway
 import dev.mago.android.metasploit.MetasploitConnectionRepository
 import dev.mago.android.metasploit.MetasploitConsoleRepository
 import dev.mago.android.metasploit.MetasploitModuleRepository
+import dev.mago.android.metasploit.ModuleCatalogRepository
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
@@ -48,8 +50,13 @@ class AppContainer(context: Context) {
     )
     val metasploitConnectionRepository: MetasploitConnectionRepository =
         MetasploitConnectionRepositoryImpl(rpcTransport, secretStore, rpcTokenStore)
-    val metasploitModuleRepository: MetasploitModuleRepository =
+    private val remoteMetasploitModuleRepository: MetasploitModuleRepository =
         MetasploitModuleRepositoryImpl(rpcTransport, rpcTokenStore)
+    val metasploitModuleRepository: ModuleCatalogRepository =
+        CachedMetasploitModuleRepository(
+            remote = remoteMetasploitModuleRepository,
+            dao = database.moduleCatalogDao(),
+        )
     val metasploitConsoleRepository: MetasploitConsoleRepository =
         MetasploitConsoleRepositoryImpl(rpcTransport, rpcTokenStore)
     val termuxGateway: TermuxGateway = TermuxGatewayImpl(appContext, dispatcherProvider)
