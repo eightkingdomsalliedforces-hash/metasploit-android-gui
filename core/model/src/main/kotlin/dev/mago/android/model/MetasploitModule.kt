@@ -60,6 +60,7 @@ data class MetasploitModuleRequest(
     val type: MetasploitModuleType,
     val name: String,
     val options: Map<String, String>,
+    val userConfirmed: Boolean = false,
 )
 
 data class MetasploitModuleLaunch(
