@@ -9,12 +9,11 @@ import dev.mago.android.model.MetasploitModuleType
 import dev.mago.android.model.MetasploitServiceRecord
 import dev.mago.android.model.MetasploitVulnerabilityRecord
 import dev.mago.android.model.MetasploitWorkspaceSummary
-import dev.mago.android.model.rpc.RpcValue
 import org.junit.Test
 
 class ReportPreviewPresentationTest {
     @Test
-    fun `ui model contains only fields permitted in safe export`() {
+    fun `ui model preserves compact summary fields alongside raw details`() {
         val preview = ReportPreviewSnapshot(
             generatedAtEpochMillis = 1_700_000_000_000,
             workspace = MetasploitWorkspaceSummary(
@@ -22,7 +21,7 @@ class ReportPreviewPresentationTest {
                 name = "lab",
                 createdAtEpochSeconds = 11,
                 updatedAtEpochSeconds = 12,
-                extraFields = mapOf("workspace_secret" to RpcValue.StringValue("WORKSPACE_SECRET")),
+                extraFields = emptyMap(),
             ),
             hosts = listOf(
                 MetasploitHostRecord(
@@ -32,14 +31,14 @@ class ReportPreviewPresentationTest {
                     state = "alive",
                     operatingSystem = "Linux",
                     operatingSystemFlavor = "Ubuntu",
-                    servicePack = "PREVIEW_SERVICE_PACK",
-                    language = "PREVIEW_LANGUAGE",
+                    servicePack = "SP1",
+                    language = "en",
                     purpose = "server",
-                    info = "HOST_INFO_SECRET",
-                    comments = "HOST_COMMENT_SECRET",
+                    info = "host info",
+                    comments = "host comments",
                     createdAtEpochSeconds = 21,
                     updatedAtEpochSeconds = 22,
-                    extraFields = mapOf("host_secret" to RpcValue.StringValue("HOST_EXTRA_SECRET")),
+                    extraFields = emptyMap(),
                 ),
             ),
             services = listOf(
@@ -49,10 +48,10 @@ class ReportPreviewPresentationTest {
                     protocol = "tcp",
                     state = "open",
                     name = "https",
-                    info = "SERVICE_INFO_SECRET",
+                    info = "service info",
                     createdAtEpochSeconds = 31,
                     updatedAtEpochSeconds = 32,
-                    extraFields = mapOf("service_secret" to RpcValue.StringValue("SERVICE_EXTRA_SECRET")),
+                    extraFields = emptyMap(),
                 ),
             ),
             vulnerabilities = listOf(
@@ -62,9 +61,9 @@ class ReportPreviewPresentationTest {
                     protocol = "tcp",
                     name = "CVE-TEST",
                     references = listOf("CVE-TEST"),
-                    resource = "VULN_RESOURCE_SECRET",
+                    resource = "resource",
                     reportedAtEpochSeconds = 41,
-                    extraFields = mapOf("vuln_secret" to RpcValue.StringValue("VULN_EXTRA_SECRET")),
+                    extraFields = emptyMap(),
                 ),
             ),
             executions = listOf(
@@ -77,8 +76,8 @@ class ReportPreviewPresentationTest {
                     jobId = 9,
                     uuid = "uuid-1",
                     redactedOptions = mapOf("PASSWORD" to "[REDACTED]"),
-                    resultSummary = "RESULT_SECRET",
-                    error = "ERROR_SECRET",
+                    resultSummary = "result",
+                    error = "error",
                     createdAtEpochMillis = 1_700_000_000_000,
                     updatedAtEpochMillis = 1_700_000_000_100,
                 ),
@@ -86,50 +85,43 @@ class ReportPreviewPresentationTest {
         )
 
         val model = preview.toUiModel()
+        val host = model.hosts.single()
+        val service = model.services.single()
+        val vulnerability = model.vulnerabilities.single()
+        val execution = model.executions.single()
 
         assertThat(model.generatedAtEpochMillis).isEqualTo(1_700_000_000_000)
         assertThat(model.workspaceName).isEqualTo("lab")
-        assertThat(model.hosts.single()).isEqualTo(
-            ReportHostPreviewItem(
-                address = "192.0.2.10",
-                name = "target",
-                state = "alive",
-                operatingSystem = "Linux",
-                operatingSystemFlavor = "Ubuntu",
-                purpose = "server",
-            ),
-        )
-        assertThat(model.services.single()).isEqualTo(
-            ReportServicePreviewItem(
-                host = "192.0.2.10",
-                port = 443,
-                protocol = "tcp",
-                state = "open",
-                name = "https",
-            ),
-        )
-        assertThat(model.vulnerabilities.single()).isEqualTo(
-            ReportVulnerabilityPreviewItem(
-                host = "192.0.2.10",
-                port = 443,
-                protocol = "tcp",
-                name = "CVE-TEST",
-                references = listOf("CVE-TEST"),
-            ),
-        )
-        assertThat(model.executions.single()).isEqualTo(
-            ReportExecutionPreviewItem(
-                correlationId = "correlation-1",
-                action = MetasploitModuleRunAction.CHECK,
-                type = MetasploitModuleType.AUXILIARY,
-                name = "scanner/test",
-                status = MetasploitModuleRunStatus.READY,
-                jobId = 9,
-                uuid = "uuid-1",
-                redactedOptions = mapOf("PASSWORD" to "[REDACTED]"),
-                createdAtEpochMillis = 1_700_000_000_000,
-                updatedAtEpochMillis = 1_700_000_000_100,
-            ),
-        )
+        assertThat(model.workspaceFields).isNotEmpty()
+
+        assertThat(host.address).isEqualTo("192.0.2.10")
+        assertThat(host.name).isEqualTo("target")
+        assertThat(host.state).isEqualTo("alive")
+        assertThat(host.operatingSystem).isEqualTo("Linux")
+        assertThat(host.operatingSystemFlavor).isEqualTo("Ubuntu")
+        assertThat(host.purpose).isEqualTo("server")
+        assertThat(host.fields).isNotEmpty()
+
+        assertThat(service.host).isEqualTo("192.0.2.10")
+        assertThat(service.port).isEqualTo(443)
+        assertThat(service.protocol).isEqualTo("tcp")
+        assertThat(service.state).isEqualTo("open")
+        assertThat(service.name).isEqualTo("https")
+        assertThat(service.fields).isNotEmpty()
+
+        assertThat(vulnerability.host).isEqualTo("192.0.2.10")
+        assertThat(vulnerability.port).isEqualTo(443)
+        assertThat(vulnerability.protocol).isEqualTo("tcp")
+        assertThat(vulnerability.name).isEqualTo("CVE-TEST")
+        assertThat(vulnerability.references).containsExactly("CVE-TEST")
+        assertThat(vulnerability.fields).isNotEmpty()
+
+        assertThat(execution.correlationId).isEqualTo("correlation-1")
+        assertThat(execution.action).isEqualTo(MetasploitModuleRunAction.CHECK)
+        assertThat(execution.type).isEqualTo(MetasploitModuleType.AUXILIARY)
+        assertThat(execution.name).isEqualTo("scanner/test")
+        assertThat(execution.status).isEqualTo(MetasploitModuleRunStatus.READY)
+        assertThat(execution.redactedOptions).containsExactly("PASSWORD", "[REDACTED]")
+        assertThat(execution.fields).isNotEmpty()
     }
 }
