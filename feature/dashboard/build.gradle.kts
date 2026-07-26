@@ -4,6 +4,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core:common"))
     implementation(project(":core:ui"))
     implementation(project(":core:model"))
     implementation(project(":domain:installation"))
@@ -12,4 +13,7 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.compose.material3)
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
+    testImplementation(libs.coroutines.test)
 }
