@@ -8,6 +8,8 @@ import dev.mago.android.database.MagoDatabase
 import dev.mago.android.database.ModuleDatabaseMapper
 import dev.mago.android.database.RoomInstallationStateRepository
 import dev.mago.android.database.RoomModuleLocalStore
+import dev.mago.android.datastore.AppLockSettingsStore
+import dev.mago.android.datastore.PreferencesAppLockSettingsStore
 import dev.mago.android.installation.BootstrapCoordinator
 import dev.mago.android.installation.BootstrapCoordinatorImpl
 import dev.mago.android.installation.InstallationStateRepository
@@ -42,6 +44,7 @@ class AppContainer(context: Context) {
     private val database = MagoDatabase.create(appContext)
 
     val dispatcherProvider: DispatcherProvider = DefaultDispatcherProvider()
+    val appLockSettingsStore: AppLockSettingsStore = PreferencesAppLockSettingsStore(appContext)
     private val installationStateRepository: InstallationStateRepository =
         RoomInstallationStateRepository(
             dao = database.installationStateDao(),
