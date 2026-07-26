@@ -26,7 +26,8 @@ Phase 8A extends those existing boundaries rather than reviving the obsolete Pha
 
 Add the following model in the Dashboard feature package:
 
-```kotlin\sealed interface OperationStopTarget {
+```kotlin
+sealed interface OperationStopTarget {
     val displayId: String
 
     data class Job(
@@ -95,7 +96,7 @@ Rules:
 
 1. `userConfirmed` must be `true`; otherwise return `RPC_JOB_CONFIRMATION_REQUIRED` with zero transport calls.
 2. `jobId` must parse completely as a non-negative `Long`; otherwise return `RPC_JOB_ID_INVALID` with zero transport calls.
-3. Call `job.stop` exactly once with one argument: `RpcValue.IntValue(jobId)`.
+3. Store the validated value as `parsedJobId` and call `job.stop` exactly once with one argument: `RpcValue.IntValue(parsedJobId)`.
 4. Transport failures are returned unchanged.
 5. A success response must be a map containing a string `result`.
 6. `result` is accepted only when it equals `success`, ignoring case.
@@ -201,6 +202,8 @@ After the checks, clear the confirmation, set `stoppingTarget`, and call exactly
 
 ### Global operation lock
 
+While `stopConfirmation` is non-null, the confirmation dialog is the only active operation surface. Ignore manual refresh, Job detail selection, maintenance requests, maintenance confirmation, and additional stop requests until the dialog is canceled or confirmed.
+
 While `stoppingTarget` is non-null:
 
 - Ignore new stop requests.
@@ -251,6 +254,7 @@ The calls may be sequential; no concurrency requirement is introduced.
 ### Manual refresh
 
 - Ignore refresh while already loading, stopping, confirming a stop, or running maintenance.
+- Starting an accepted manual refresh clears `stopMessage` and `stopError`.
 - Set `loading=true` while preserving the previous complete lists.
 - On complete success, replace Jobs and Sessions together and clear `selectedJob`, matching existing manual-refresh behavior.
 - On failure, preserve the previous complete lists and selected Job, clear loading, and display the safe error.
@@ -260,11 +264,12 @@ This removes the current partial-update behavior where one failed source can be 
 
 ### Refresh after successful stop
 
-After one successful stop RPC, invoke the shared loader exactly once.
+After one successful stop RPC, invoke the shared loader exactly once while retaining `stoppingTarget` until the refresh result is applied.
 
 - Both reads succeed: atomically replace both lists.
 - Either read fails: preserve the complete pre-stop lists and selected Job.
 - Never retry the stop or refresh automatically.
+- Every terminal branch clears `stoppingTarget`.
 
 Selected Job handling after a successful post-stop refresh:
 
@@ -286,7 +291,12 @@ After stop RPC success but refresh failure:
 
 These messages make no stronger claim than the available evidence.
 
-A stop message remains until the next stop request, manual refresh, or ViewModel destruction.
+A stop message remains until the next accepted stop request, accepted manual refresh, or ViewModel destruction.
+
+A stop RPC failure clears `stoppingTarget` and sets:
+
+- title: `無法停止 Job #<id>` or `無法停止 Session #<id>`
+- optional user message: the repository failure's safe `userMessage`
 
 ## UI design
 
@@ -300,11 +310,11 @@ Each Job card keeps:
 - Job name
 - `查看詳情`
 
-Add a text button labeled `停止 Job`. At 160% and 200% font scale, the detail and stop controls may stack vertically; no fixed horizontal width is required.
+Add a text-labeled destructive action `停止 Job`. It may use the Material error color, but the text label remains the primary risk signal. At 160% and 200% font scale, the detail and stop controls may stack vertically; no fixed horizontal width is required.
 
 ### Session cards
 
-Each Session card keeps its current read-only details and adds `停止 Session`.
+Each Session card keeps its current read-only details and adds the text-labeled destructive action `停止 Session` under the same sizing and accessibility rules.
 
 No input field, command button, read action, terminal view, or batch control is added.
 
@@ -331,7 +341,7 @@ Session dialog:
 停止後此 Session 可能無法再次連線。操作只會送出一次，不會自動重試。
 ```
 
-Buttons are `取消` and `確認停止`. The title always includes the type and ID. Risk is described in text and not conveyed by color alone.
+Buttons are `取消` and `確認停止`. The title always includes the type and ID. Risk is described in text and not conveyed by color alone. Dismissing the dialog returns focus to the originating card action through normal dialog focus restoration; no custom focus trap is added.
 
 ### Running state
 
@@ -395,20 +405,23 @@ Fixed pre-RPC messages:
 2. Cancel performs zero RPC calls.
 3. Confirmation while not READY performs zero stop RPC calls.
 4. Confirmation after the target disappears performs zero stop RPC calls.
-5. A global stop blocks a second stop, refresh, Job detail load, and maintenance action.
-6. Maintenance loading blocks stop requests.
-7. Confirmation invokes only the matching stop method once.
-8. Stop failure performs zero post-stop reads.
-9. Stop success calls Jobs once and Sessions once.
-10. Complete post-stop refresh atomically replaces both lists.
-11. Either post-stop read failure preserves both old lists and selected Job.
-12. Target absent after refresh shows the stopped message.
-13. Target present after refresh shows the still-present message.
-14. Stopping the selected Job clears its detail.
-15. Stopping another Job retains selected Job only when it still exists.
-16. Stopping a Session retains an unrelated selected Job when it still exists.
-17. Manual refresh failure preserves the previous complete snapshot.
-18. Manual refresh success replaces both lists and clears selected Job.
+5. A confirmation dialog blocks refresh, Job detail, maintenance, and a second stop request.
+6. A global stop blocks a second stop, refresh, Job detail load, and maintenance action.
+7. Maintenance loading blocks stop requests.
+8. Confirmation invokes only the matching stop method once.
+9. Stop failure performs zero post-stop reads.
+10. Stop success calls Jobs once and Sessions once.
+11. Complete post-stop refresh atomically replaces both lists.
+12. Either post-stop read failure preserves both old lists and selected Job.
+13. Target absent after refresh shows the stopped message.
+14. Target present after refresh shows the still-present message.
+15. Stopping the selected Job clears its detail.
+16. Stopping another Job retains selected Job only when it still exists.
+17. Stopping a Session retains an unrelated selected Job when it still exists.
+18. Manual refresh failure preserves the previous complete snapshot.
+19. Manual refresh success replaces both lists and clears selected Job.
+20. Accepted manual refresh clears old stop feedback.
+21. Every success or failure terminal branch clears the global stop lock.
 
 Do not add broad screenshot tests. Compose UI tests are optional only if the existing test infrastructure can verify the dialog without introducing a new instrumentation stack. Pure service and ViewModel tests are mandatory.
 
