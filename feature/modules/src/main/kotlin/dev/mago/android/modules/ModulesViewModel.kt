@@ -31,6 +31,8 @@ data class ModuleRunConfirmation(
     val redactedOptions: Map<String, String>,
 )
 
+enum class ModuleListMode { ALL, FAVORITES, RECENT }
+
 data class ModulesUiState(
     val type: MetasploitModuleType = MetasploitModuleType.EXPLOIT,
     val query: String = "",
@@ -38,6 +40,9 @@ data class ModulesUiState(
     val searchResults: List<MetasploitModuleSummary> = emptyList(),
     val searching: Boolean = false,
     val searchErrorMessage: String? = null,
+    val recentModules: List<MetasploitModuleSummary> = emptyList(),
+    val favorites: Set<String> = emptySet(),
+    val listMode: ModuleListMode = ModuleListMode.ALL,
     val selected: MetasploitModuleInfo? = null,
     val optionValues: Map<String, String> = emptyMap(),
     val validationErrors: Map<String, String> = emptyMap(),
@@ -54,7 +59,19 @@ data class ModulesUiState(
     val runErrorMessage: String? = null,
 ) {
     val visibleModules: List<MetasploitModuleSummary>
-        get() = if (query.isBlank()) modules else searchResults
+        get() {
+            val source = when (listMode) {
+                ModuleListMode.ALL -> if (query.isBlank()) modules else searchResults
+                ModuleListMode.FAVORITES -> modules.filter { it.fullName in favorites }
+                ModuleListMode.RECENT -> recentModules.filter { it.type == type }
+            }
+            if (query.isBlank() || listMode == ModuleListMode.ALL) return source
+            val normalized = query.trim()
+            return source.filter {
+                it.name.contains(normalized, ignoreCase = true) ||
+                    it.displayName?.contains(normalized, ignoreCase = true) == true
+            }
+        }
 
     val canCheck: Boolean
         get() = selected?.let {
@@ -81,7 +98,7 @@ class ModulesViewModel(
     private var payloadJob: Job? = null
 
     init {
-        refreshHistory()
+        refreshLocalState()
     }
 
     fun selectType(type: MetasploitModuleType) {
@@ -90,11 +107,11 @@ class ModulesViewModel(
         searchJob?.cancel()
         payloadJob?.cancel()
         loadType(type, current.query)
-        scheduleSearch(current.query, type)
+        if (current.listMode == ModuleListMode.ALL) scheduleSearch(current.query, type)
     }
 
     fun setQuery(query: String) {
-        val type = _uiState.value.type
+        val state = _uiState.value
         _uiState.update {
             it.copy(
                 query = query,
@@ -103,13 +120,35 @@ class ModulesViewModel(
                 searchErrorMessage = null,
             )
         }
-        scheduleSearch(query, type)
+        if (state.listMode == ModuleListMode.ALL) scheduleSearch(query, state.type)
+    }
+
+    fun setListMode(mode: ModuleListMode) {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                listMode = mode,
+                query = "",
+                searchResults = emptyList(),
+                searching = false,
+                searchErrorMessage = null,
+            )
+        }
+    }
+
+    fun toggleFavorite(module: MetasploitModuleSummary) {
+        viewModelScope.launch {
+            val favorite = module.fullName !in _uiState.value.favorites
+            runCatching { localStore.setFavorite(module, favorite) }
+            refreshLibraryNow()
+        }
     }
 
     fun selectModule(module: MetasploitModuleSummary) {
         payloadJob?.cancel()
         viewModelScope.launch {
             runCatching { localStore.recordOpened(module) }
+            refreshLibraryNow()
             _uiState.update {
                 it.copy(
                     loading = true,
@@ -166,9 +205,7 @@ class ModulesViewModel(
                 authorizationConfirmed = false,
             )
         }
-        if (name.equals("TARGET", ignoreCase = true)) {
-            reloadPayloadsForTarget(value)
-        }
+        if (name.equals("TARGET", ignoreCase = true)) reloadPayloadsForTarget(value)
     }
 
     fun requestCheck() {
@@ -259,9 +296,7 @@ class ModulesViewModel(
                             updatedAtEpochMillis = now,
                         ),
                     )
-                    _uiState.update {
-                        it.copy(runLoading = false, launch = result.value)
-                    }
+                    _uiState.update { it.copy(runLoading = false, launch = result.value) }
                 }
             }
         }
@@ -287,9 +322,7 @@ class ModulesViewModel(
                         )
                     }
                     refreshHistoryNow()
-                    _uiState.update {
-                        it.copy(runLoading = false, runResult = result.value)
-                    }
+                    _uiState.update { it.copy(runLoading = false, runResult = result.value) }
                 }
             }
         }
@@ -315,7 +348,7 @@ class ModulesViewModel(
     fun retry() {
         val current = _uiState.value
         loadType(current.type, current.query)
-        scheduleSearch(current.query, current.type)
+        if (current.listMode == ModuleListMode.ALL) scheduleSearch(current.query, current.type)
     }
 
     private fun reloadPayloadsForTarget(rawTarget: String) {
@@ -357,7 +390,13 @@ class ModulesViewModel(
         }
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MILLIS)
-            if (_uiState.value.query.trim() != normalized || _uiState.value.type != type) return@launch
+            if (
+                _uiState.value.query.trim() != normalized ||
+                _uiState.value.type != type ||
+                _uiState.value.listMode != ModuleListMode.ALL
+            ) {
+                return@launch
+            }
             _uiState.update { it.copy(searching = true, searchErrorMessage = null) }
             val qualifiedQuery = "$normalized type:${type.rpcName}"
             when (val result = repository.search(qualifiedQuery)) {
@@ -388,7 +427,11 @@ class ModulesViewModel(
                     val filtered = result.value.filter { it.type == type }
                     runCatching { localStore.cacheModules(type, filtered) }
                     _uiState.update { current ->
-                        if (current.query.trim() == normalized && current.type == type) {
+                        if (
+                            current.query.trim() == normalized &&
+                            current.type == type &&
+                            current.listMode == ModuleListMode.ALL
+                        ) {
                             current.copy(
                                 searching = false,
                                 searchResults = filtered,
@@ -522,8 +565,17 @@ class ModulesViewModel(
         refreshHistoryNow()
     }
 
-    private fun refreshHistory() {
-        viewModelScope.launch { refreshHistoryNow() }
+    private fun refreshLocalState() {
+        viewModelScope.launch {
+            refreshLibraryNow()
+            refreshHistoryNow()
+        }
+    }
+
+    private suspend fun refreshLibraryNow() {
+        val favorites = runCatching { localStore.favorites() }.getOrDefault(emptySet())
+        val recent = runCatching { localStore.recent(RECENT_LIMIT) }.getOrDefault(emptyList())
+        _uiState.update { it.copy(favorites = favorites, recentModules = recent) }
     }
 
     private suspend fun refreshHistoryNow() {
@@ -533,6 +585,7 @@ class ModulesViewModel(
 
     companion object {
         private const val HISTORY_LIMIT = 50
+        private const val RECENT_LIMIT = 50
         private const val SEARCH_DEBOUNCE_MILLIS = 250L
         private val PAYLOAD_CAPABLE_TYPES = setOf(
             MetasploitModuleType.EXPLOIT,

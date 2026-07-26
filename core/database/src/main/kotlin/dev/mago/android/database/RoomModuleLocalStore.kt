@@ -19,7 +19,11 @@ class RoomModuleLocalStore(
 ) : ModuleLocalStore {
     override suspend fun cacheModules(type: MetasploitModuleType, modules: List<MetasploitModuleSummary>) {
         val now = clock()
-        catalogDao.replaceType(type.rpcName, modules.map { mapper.catalog(it, now) })
+        val entries = modules.map { mapper.catalog(it, now) }
+        when (ModuleCatalogWritePolicy.mode(modules)) {
+            ModuleCatalogWriteMode.REPLACE_TYPE -> catalogDao.replaceType(type.rpcName, entries)
+            ModuleCatalogWriteMode.UPSERT_RESULTS -> if (entries.isNotEmpty()) catalogDao.upsertAll(entries)
+        }
     }
 
     override suspend fun cacheInfo(info: MetasploitModuleInfo) {
