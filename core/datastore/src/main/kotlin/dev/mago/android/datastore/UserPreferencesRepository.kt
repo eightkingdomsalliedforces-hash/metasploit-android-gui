@@ -24,8 +24,16 @@ enum class ThemeMode {
     AMOLED,
 }
 
+enum class FontScale(val percent: Int, val multiplier: Float) {
+    NORMAL(100, 1.0f),
+    LARGE(130, 1.3f),
+    EXTRA_LARGE(160, 1.6f),
+    MAXIMUM(200, 2.0f),
+}
+
 data class UserPreferences(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val fontScale: FontScale = FontScale.NORMAL,
     val reducedMotion: Boolean = false,
 )
 
@@ -41,12 +49,19 @@ class UserPreferencesRepository private constructor(
                 themeMode = ThemeMode.entries.getOrElse(values[THEME_MODE] ?: ThemeMode.SYSTEM.ordinal) {
                     ThemeMode.SYSTEM
                 },
+                fontScale = FontScale.entries.getOrElse(values[FONT_SCALE] ?: FontScale.NORMAL.ordinal) {
+                    FontScale.NORMAL
+                },
                 reducedMotion = values[REDUCED_MOTION] ?: false,
             )
         }
 
     suspend fun setThemeMode(mode: ThemeMode) {
         dataStore.edit { values -> values[THEME_MODE] = mode.ordinal }
+    }
+
+    suspend fun setFontScale(scale: FontScale) {
+        dataStore.edit { values -> values[FONT_SCALE] = scale.ordinal }
     }
 
     suspend fun setReducedMotion(enabled: Boolean) {
@@ -56,6 +71,7 @@ class UserPreferencesRepository private constructor(
     companion object {
         private const val FILE_NAME = "user_preferences.preferences_pb"
         private val THEME_MODE = intPreferencesKey("theme_mode")
+        private val FONT_SCALE = intPreferencesKey("font_scale")
         private val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
 
         fun create(context: Context): UserPreferencesRepository {
