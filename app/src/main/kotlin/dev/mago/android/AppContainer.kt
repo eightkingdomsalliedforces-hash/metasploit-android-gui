@@ -14,12 +14,14 @@ import dev.mago.android.installation.InstallationStateRepository
 import dev.mago.android.installation.TermuxGateway
 import dev.mago.android.metasploit.MetasploitConnectionRepository
 import dev.mago.android.metasploit.MetasploitConsoleRepository
+import dev.mago.android.metasploit.MetasploitInventoryRepository
 import dev.mago.android.metasploit.MetasploitModuleRepository
 import dev.mago.android.metasploit.MetasploitOperationsRepository
 import dev.mago.android.metasploit.ModuleLocalStore
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
+import dev.mago.android.rpc.MetasploitInventoryRepositoryImpl
 import dev.mago.android.rpc.MetasploitModuleRepositoryImpl
 import dev.mago.android.rpc.MetasploitOperationsRepositoryImpl
 import dev.mago.android.rpc.OkHttpRpcTransport
@@ -57,6 +59,8 @@ class AppContainer(context: Context) {
         MetasploitModuleRepositoryImpl(rpcTransport, rpcTokenStore)
     val metasploitOperationsRepository: MetasploitOperationsRepository =
         MetasploitOperationsRepositoryImpl(rpcTransport, rpcTokenStore)
+    val metasploitInventoryRepository: MetasploitInventoryRepository =
+        MetasploitInventoryRepositoryImpl(rpcTransport, rpcTokenStore)
     val moduleLocalStore: ModuleLocalStore = RoomModuleLocalStore(
         catalogDao = database.moduleCatalogDao(),
         historyDao = database.moduleHistoryDao(),

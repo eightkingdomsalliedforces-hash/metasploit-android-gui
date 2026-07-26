@@ -9,6 +9,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.mago.android.dashboard.DashboardViewModel
+import dev.mago.android.inventory.InventoryViewModel
 import dev.mago.android.modules.ModulesViewModel
 import dev.mago.android.onboarding.OnboardingViewModel
 import dev.mago.android.terminal.TerminalViewModel
@@ -25,6 +26,9 @@ class MainActivity : ComponentActivity() {
             coordinator = container.bootstrapCoordinator,
             operationsRepository = container.metasploitOperationsRepository,
         )
+    }
+    private val inventoryViewModel by viewModels<InventoryViewModel> {
+        InventoryViewModel.factory(container.metasploitInventoryRepository)
     }
     private val modulesViewModel by viewModels<ModulesViewModel> {
         ModulesViewModel.factory(
@@ -44,12 +48,14 @@ class MainActivity : ComponentActivity() {
             ) { onboardingViewModel.retry() }
             val installationState by onboardingViewModel.state.collectAsStateWithLifecycle()
             val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
+            val inventoryState by inventoryViewModel.uiState.collectAsStateWithLifecycle()
             val modulesState by modulesViewModel.uiState.collectAsStateWithLifecycle()
             val terminalState by terminalViewModel.uiState.collectAsStateWithLifecycle()
             val diagnostics by container.bootstrapCoordinator.diagnostics.collectAsStateWithLifecycle()
             MagoApp(
                 installationState = installationState,
                 dashboardState = dashboardState,
+                inventoryState = inventoryState,
                 modulesState = modulesState,
                 terminalState = terminalState,
                 diagnostics = diagnostics,
@@ -58,6 +64,9 @@ class MainActivity : ComponentActivity() {
                 onRequestTermuxPermission = {
                     permissionLauncher.launch("com.termux.permission.RUN_COMMAND")
                 },
+                onInventoryRefresh = inventoryViewModel::refresh,
+                onInventoryWorkspaceSelected = inventoryViewModel::selectWorkspace,
+                onInventoryTabSelected = inventoryViewModel::selectTab,
                 onModuleTypeSelected = modulesViewModel::selectType,
                 onModuleQueryChanged = modulesViewModel::setQuery,
                 onModuleListModeSelected = modulesViewModel::setListMode,

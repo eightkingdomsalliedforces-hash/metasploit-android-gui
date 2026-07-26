@@ -41,6 +41,11 @@ value class RpcMethod(val value: String) {
         val JOB_INFO = RpcMethod("job.info")
         val SESSION_LIST = RpcMethod("session.list")
 
+        val DB_WORKSPACES = RpcMethod("db.workspaces")
+        val DB_HOSTS = RpcMethod("db.hosts")
+        val DB_SERVICES = RpcMethod("db.services")
+        val DB_VULNS = RpcMethod("db.vulns")
+
         val CONSOLE_CREATE = RpcMethod("console.create")
         val CONSOLE_READ = RpcMethod("console.read")
         val CONSOLE_WRITE = RpcMethod("console.write")
