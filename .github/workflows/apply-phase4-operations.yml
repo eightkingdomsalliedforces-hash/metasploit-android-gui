@@ -1,0 +1,47 @@
+name: Apply Phase 4 Read-Only Operations
+
+on:
+  push:
+    branches: [feature/phase4-operations]
+    paths:
+      - '.github/workflows/apply-phase4-operations.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/phase4-operations
+          fetch-depth: 0
+
+      - name: Verify and apply payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload_b64=/tmp/phase4-operations.b64
+          payload_archive=/tmp/phase4-operations.tar.xz
+
+          cat phase4-operations-payload/part-* > "$payload_b64"
+          test "$(wc -c < "$payload_b64")" -eq 16352
+          base64 --decode "$payload_b64" > "$payload_archive"
+          echo '46a021032bd9d7e350b156919e6696023ed7c12a5474661afa27e64a45c1abc8  /tmp/phase4-operations.tar.xz' | sha256sum --check --strict
+          xz --test "$payload_archive"
+          tar -xJf "$payload_archive" -C .
+
+          test -s core/model/src/main/kotlin/dev/mago/android/model/MetasploitOperation.kt
+          test -s core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt
+          test -s feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt
+          test -s feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt
+
+          git rm -r phase4-operations-payload .github/workflows/apply-phase4-operations.yml
+          git add .github/workflows/android.yml app core domain feature/dashboard
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: add read-only jobs and sessions dashboard'
+          git push origin HEAD:feature/phase4-operations
