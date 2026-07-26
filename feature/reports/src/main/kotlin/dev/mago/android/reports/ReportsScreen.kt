@@ -18,8 +18,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mago.android.reporting.ReportFormat
@@ -58,7 +63,7 @@ fun ReportsScreen(
                 ) {
                     Text("報告預覽", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "預覽內容與安全版匯出使用相同欄位；匯出仍透過 Android 系統檔案選擇器。",
+                        "App 內可檢視原始欄位；匯出文件仍使用安全白名單與遮罩規則。",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -101,7 +106,7 @@ fun ReportsScreen(
             item { PreviewSummaryCard(preview) }
         }
 
-        item { SafetyNoticeCard() }
+        item { RawPreviewNoticeCard() }
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -208,6 +213,7 @@ fun ReportsScreen(
 
 @Composable
 private fun PreviewSummaryCard(preview: ReportPreviewUiModel) {
+    var expanded by rememberSaveable(preview.generatedAtEpochMillis) { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -224,22 +230,36 @@ private fun PreviewSummaryCard(preview: ReportPreviewUiModel) {
                 "每個分類最多載入 ${ReportsViewModel.RECORD_LIMIT} 筆。",
                 style = MaterialTheme.typography.bodySmall,
             )
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "收合 Workspace 原始欄位" else "顯示 Workspace 原始欄位")
+            }
+            if (expanded) {
+                HorizontalDivider()
+                PreviewFields(preview.workspaceFields)
+            }
         }
     }
 }
 
 @Composable
-private fun SafetyNoticeCard() {
+private fun RawPreviewNoticeCard() {
     Card(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text("安全邊界", style = MaterialTheme.typography.titleMedium)
-            Text("預覽與匯出不包含 RPC 密碼、Token、Credentials、Keystore 或 Console 內容。")
-            Text("不包含資產自由文字、MAC、完整路徑、模組原始結果或原始錯誤內容。")
+            Text("原始預覽與安全匯出", style = MaterialTheme.typography.titleMedium)
             Text(
-                "模組選項只顯示本機已遮罩的值。",
+                "展開後可能顯示 MAC、資產備註、服務資訊、時間欄位、模組結果／錯誤，" +
+                    "以及 Metasploit 回傳的未知 extraFields。",
+            )
+            Text(
+                "這些原始預覽資料只存在目前 App 記憶體，不會寫入 Room、DataStore、" +
+                    "Logcat、診斷資訊或報告文件。",
+            )
+            Text(
+                "JSON、CSV、HTML 與 ZIP 仍排除 RPC 密碼、Token、Credentials、Keystore、" +
+                    "Console、完整路徑、資產自由文字、extraFields、原始結果與原始錯誤。",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -248,12 +268,10 @@ private fun SafetyNoticeCard() {
 
 @Composable
 private fun HostPreviewCard(host: ReportHostPreviewItem) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(host.address, style = MaterialTheme.typography.titleMedium)
+    ExpandablePreviewCard(
+        stateKey = host.address,
+        title = host.address,
+        summary = {
             host.name.nonBlank()?.let { Text("名稱：$it") }
             host.state.nonBlank()?.let { Text("狀態：$it") }
             val operatingSystem = listOfNotNull(
@@ -262,69 +280,157 @@ private fun HostPreviewCard(host: ReportHostPreviewItem) {
             ).joinToString(" ")
             if (operatingSystem.isNotBlank()) Text("作業系統：$operatingSystem")
             host.purpose.nonBlank()?.let { Text("用途：$it") }
-        }
-    }
+        },
+        fields = host.fields,
+    )
 }
 
 @Composable
 private fun ServicePreviewCard(service: ReportServicePreviewItem) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                "${service.host}:${service.port}/${service.protocol}",
-                style = MaterialTheme.typography.titleMedium,
-            )
+    ExpandablePreviewCard(
+        stateKey = "${service.host}:${service.port}/${service.protocol}",
+        title = "${service.host}:${service.port}/${service.protocol}",
+        summary = {
             service.name.nonBlank()?.let { Text("服務：$it") }
             service.state.nonBlank()?.let { Text("狀態：$it") }
-        }
-    }
+        },
+        fields = service.fields,
+    )
 }
 
 @Composable
 private fun VulnerabilityPreviewCard(vulnerability: ReportVulnerabilityPreviewItem) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(vulnerability.name, style = MaterialTheme.typography.titleMedium)
+    ExpandablePreviewCard(
+        stateKey = "${vulnerability.host}:${vulnerability.port}:${vulnerability.name}",
+        title = vulnerability.name,
+        summary = {
             Text(vulnerability.endpoint())
             if (vulnerability.references.isNotEmpty()) {
                 Text("參考：${vulnerability.references.joinToString()}")
             }
-        }
-    }
+        },
+        fields = vulnerability.fields,
+    )
 }
 
 @Composable
 private fun ExecutionPreviewCard(execution: ReportExecutionPreviewItem) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                "${execution.type.displayName}/${execution.name}",
-                style = MaterialTheme.typography.titleMedium,
-            )
+    ExpandablePreviewCard(
+        stateKey = execution.correlationId,
+        title = "${execution.type.displayName}/${execution.name}",
+        summary = {
             Text("動作：${execution.action.name}・狀態：${execution.status.name}")
             execution.jobId?.let { Text("Job ID：$it") }
             execution.uuid.nonBlank()?.let { Text("UUID：$it") }
             Text("建立：${formatTimestamp(execution.createdAtEpochMillis)}")
             Text("更新：${formatTimestamp(execution.updatedAtEpochMillis)}")
-            if (execution.redactedOptions.isNotEmpty()) {
-                Text("已遮罩選項", style = MaterialTheme.typography.labelLarge)
-                execution.redactedOptions.toSortedMap().forEach { (key, value) ->
-                    Text("$key：$value", style = MaterialTheme.typography.bodySmall)
+        },
+        fields = execution.fields,
+    )
+}
+
+@Composable
+private fun ExpandablePreviewCard(
+    stateKey: String,
+    title: String,
+    summary: @Composable () -> Unit,
+    fields: List<ReportPreviewField>,
+) {
+    var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    summary()
+                }
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "收合" else "完整欄位")
                 }
             }
+            if (expanded) {
+                HorizontalDivider()
+                PreviewFields(fields)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewFields(fields: List<ReportPreviewField>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        fields.forEach { field ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(field.label, style = MaterialTheme.typography.labelLarge)
+                PreviewValue(field.value, depth = 0)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewValue(value: ReportPreviewValue, depth: Int) {
+    val indentation = (depth.coerceAtMost(8) * 12).dp
+    when (value) {
+        is ReportPreviewValue.Scalar -> {
             Text(
-                "關聯 ID：${execution.correlationId}",
+                text = value.text + if (value.truncated) "\n[字串已截斷]" else "",
+                modifier = Modifier.padding(start = indentation),
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+
+        is ReportPreviewValue.Binary -> {
+            Text(
+                text = buildString {
+                    append(value.hex)
+                    append("\n共 ${value.totalBytes} bytes")
+                    if (value.truncated) append("；只顯示前 4096 bytes")
+                },
+                modifier = Modifier.padding(start = indentation),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        is ReportPreviewValue.Array -> {
+            Column(
+                modifier = Modifier.padding(start = indentation),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (value.values.isEmpty()) Text("[]", style = MaterialTheme.typography.bodySmall)
+                value.values.forEachIndexed { index, child ->
+                    Text("[$index]", style = MaterialTheme.typography.labelSmall)
+                    PreviewValue(child, depth + 1)
+                }
+                if (value.truncated) {
+                    Text("[陣列超過 500 項，後續內容已截斷]", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        is ReportPreviewValue.Object -> {
+            Column(
+                modifier = Modifier.padding(start = indentation),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (value.entries.isEmpty()) Text("{}", style = MaterialTheme.typography.bodySmall)
+                value.entries.forEach { entry ->
+                    Text(entry.key, style = MaterialTheme.typography.labelSmall)
+                    PreviewValue(entry.value, depth + 1)
+                }
+                if (value.truncated) {
+                    Text("[物件超過 500 項，後續內容已截斷]", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }
