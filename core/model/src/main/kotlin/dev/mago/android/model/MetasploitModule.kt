@@ -15,6 +15,10 @@ enum class MetasploitModuleType(val rpcName: String, val displayName: String) {
 data class MetasploitModuleSummary(
     val type: MetasploitModuleType,
     val name: String,
+    val displayName: String? = null,
+    val rank: String? = null,
+    val disclosureDate: String? = null,
+    val extraFields: Map<String, RpcValue> = emptyMap(),
 ) {
     val fullName: String = "${type.rpcName}/$name"
 }
