@@ -5,12 +5,15 @@ on:
     branches: [feature/phase4-operations]
     paths:
       - '.github/workflows/apply-phase4-operations.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.event_name == 'push' || github.head_ref == 'feature/phase4-operations'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
