@@ -1,20 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
-ACTION="INSTALL_DEPENDENCIES"; OPERATION_ID="${1:-missing-operation-id}"
-with_install_lock "$ACTION" "$OPERATION_ID"
-command_exists pkg || bridge_fail "$ACTION" "$OPERATION_ID" 69 "Termux package manager is unavailable"
-packages=(git ruby postgresql openssl libffi libxml2 libxslt libyaml readline ncurses make clang pkg-config rust binutils coreutils findutils procps iproute2 jq tar gzip)
-if pkg install -y "${packages[@]}" >"$MAGO_LOG_DIR/dependencies.log" 2>&1; then
-  missing=()
-  for command in git ruby gem bundle psql pg_ctl openssl make clang; do
-    command_exists "$command" || missing+=("$command")
+ACTION=INSTALL_DEPENDENCIES; OPERATION_ID="${1:-missing-operation-id}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; source "$SCRIPT_DIR/lib/common.sh"
+readonly PACKAGES=(git ruby clang make pkg-config postgresql openssl libpcap libsqlite libffi libxml2 libxslt zlib readline ncurses-utils iproute2 libgmp autoconf bison rust cmake ninja)
+run_install() {
+  require_command "$ACTION" "$OPERATION_ID" pkg 72
+  export DEBIAN_FRONTEND=noninteractive
+  pkg install -y "${PACKAGES[@]}" || bridge_fail "$ACTION" "$OPERATION_ID" 72 "Unable to install Metasploit dependencies"
+  local command_name
+  for command_name in git ruby gem initdb pg_ctl pg_isready openssl ss; do
+    require_command "$ACTION" "$OPERATION_ID" "$command_name" 72
   done
-  if (( ${#missing[@]} > 0 )); then
-    bridge_fail "$ACTION" "$OPERATION_ID" 69 "Required commands are missing after package installation" "{\"missing\":\"$(json_escape "${missing[*]}")\"}"
-  fi
-  bridge_ok "$ACTION" "$OPERATION_ID" "Metasploit dependencies installed" 100 '{}'
-else
-  bridge_fail "$ACTION" "$OPERATION_ID" 69 "Unable to install Metasploit dependencies" '{"log":"dependencies.log"}'
-fi
+  bridge_ok "$ACTION" "$OPERATION_ID" "Metasploit dependencies installed" 100 "packageCount" "${#PACKAGES[@]}"
+}
+with_install_lock "$ACTION" "$OPERATION_ID" run_install

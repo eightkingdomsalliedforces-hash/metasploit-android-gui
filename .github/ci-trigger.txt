@@ -1,1 +1,1 @@
-Trigger GitHub Actions verification for MAGO Phase 2 installer lifecycle.
+Trigger GitHub Actions verification for MAGO Phase 1.

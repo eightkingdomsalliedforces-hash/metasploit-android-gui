@@ -7,26 +7,28 @@ data class RpcSecretRecord(
     val ciphertext: ByteArray,
 )
 
-object RpcSecretRecordCodec {
-    private const val VERSION = "v1"
-
-    fun encode(record: RpcSecretRecord): String = buildString {
-        append(VERSION)
-        append('.')
-        append(Base64.getEncoder().encodeToString(record.iv))
-        append('.')
-        append(Base64.getEncoder().encodeToString(record.ciphertext))
+class RpcSecretRecordCodec {
+    fun encode(iv: ByteArray, ciphertext: ByteArray): String {
+        require(iv.isNotEmpty()) { "IV must not be empty" }
+        require(ciphertext.isNotEmpty()) { "Ciphertext must not be empty" }
+        val encoder = Base64.getUrlEncoder().withoutPadding()
+        return listOf(VERSION, encoder.encodeToString(iv), encoder.encodeToString(ciphertext)).joinToString(".")
     }
 
     fun decode(value: String): RpcSecretRecord? {
         val parts = value.split('.')
         if (parts.size != 3 || parts[0] != VERSION) return null
         return try {
-            val iv = Base64.getDecoder().decode(parts[1])
-            val ciphertext = Base64.getDecoder().decode(parts[2])
-            if (iv.size != 12 || ciphertext.isEmpty()) null else RpcSecretRecord(iv, ciphertext)
+            val decoder = Base64.getUrlDecoder()
+            val iv = decoder.decode(parts[1])
+            val ciphertext = decoder.decode(parts[2])
+            if (iv.isEmpty() || ciphertext.isEmpty()) null else RpcSecretRecord(iv, ciphertext)
         } catch (_: IllegalArgumentException) {
             null
         }
+    }
+
+    private companion object {
+        const val VERSION = "v1"
     }
 }

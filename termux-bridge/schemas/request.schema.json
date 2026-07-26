@@ -10,7 +10,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": 2
+      "const": 1
     },
     "operationId": {
       "type": "string",
@@ -18,12 +18,12 @@
     },
     "action": {
       "enum": [
-        "UPDATE_PACKAGES",
+        "CONFIGURE_RPC",
         "INSTALL_DEPENDENCIES",
+        "UPDATE_PACKAGES",
         "INSTALL_METASPLOIT",
         "REPAIR_METASPLOIT",
         "INITIALIZE_DATABASE",
-        "CONFIGURE_RPC",
         "START_SERVICES",
         "STOP_SERVICES",
         "START_RPC",

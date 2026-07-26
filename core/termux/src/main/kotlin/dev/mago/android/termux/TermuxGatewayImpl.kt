@@ -26,6 +26,7 @@ class TermuxGatewayImpl(
     },
     private val bootstrapFactory: TermuxBootstrapCommandFactory =
         TermuxBootstrapCommandFactory(BridgeBundleMetadata.SHA256),
+    private val timeoutPolicy: BridgeActionTimeoutPolicy = BridgeActionTimeoutPolicy(),
 ) : TermuxGateway {
     private val appContext = context.applicationContext
     private val json = Json { ignoreUnknownKeys = false }
@@ -82,7 +83,7 @@ class TermuxGatewayImpl(
             ),
             workingDirectory = TermuxRunCommandContract.BRIDGE_HOME,
         )
-        when (val commandResult = commandClient.execute(command, timeoutFor(action))) {
+        when (val commandResult = commandClient.execute(command, timeoutPolicy.timeoutMillis(action))) {
             is AppResult.Failure -> commandResult
             is AppResult.Success -> {
                 val result = commandResult.value
@@ -99,29 +100,26 @@ class TermuxGatewayImpl(
                 }
                 try {
                     val response = json.decodeFromString<BridgeResponse>(result.stdout.trim())
-                    if (response.schemaVersion != BridgeBundleMetadata.VERSION ||
-                        response.operationId != operationId || response.action != action
-                    ) {
+                    if (response.operationId != operationId || response.action != action) {
                         AppResult.Failure(
                             AppError(
                                 errorCode = "TERMUX_RESULT_INVALID",
                                 userMessage = "Bridge 回傳資料與要求不一致",
-                                technicalMessage = "schema=${response.schemaVersion}, operation=${response.operationId}, action=${response.action}",
                                 retryable = true,
                             ),
                         )
                     } else if (!response.success || result.exitCode != 0) {
                         AppResult.Failure(
                             AppError(
-                                errorCode = "BRIDGE_${action.name}_FAILED",
+                                errorCode = "BRIDGE_${action.name}_${response.exitCode}",
                                 userMessage = response.message,
-                                technicalMessage = "bridgeExit=${response.exitCode}; termuxExit=${result.exitCode}; ${result.stderr}",
+                                technicalMessage = result.stderr,
                                 suggestedAction = SuggestedAction.RETRY,
-                                retryable = response.exitCode !in setOf(64, 65),
-                                diagnosticData = response.data.filterKeys {
-                                    !it.contains("password", ignoreCase = true) &&
-                                        !it.contains("token", ignoreCase = true)
-                                },
+                                retryable = response.exitCode in 70..79,
+                                diagnosticData = response.data + mapOf(
+                                    "bridgeAction" to action.name,
+                                    "bridgeExitCode" to response.exitCode.toString(),
+                                ),
                             ),
                         )
                     } else {
@@ -140,20 +138,6 @@ class TermuxGatewayImpl(
                 }
             }
         }
-    }
-
-    private fun timeoutFor(action: BridgeAction): Long = when (action) {
-        BridgeAction.UPDATE_PACKAGES -> 15 * 60_000L
-        BridgeAction.INSTALL_DEPENDENCIES -> 20 * 60_000L
-        BridgeAction.INSTALL_METASPLOIT,
-        BridgeAction.REPAIR_METASPLOIT,
-        BridgeAction.UPDATE_METASPLOIT -> 45 * 60_000L
-        BridgeAction.INITIALIZE_DATABASE -> 20 * 60_000L
-        BridgeAction.START_SERVICES,
-        BridgeAction.STOP_SERVICES,
-        BridgeAction.START_RPC,
-        BridgeAction.STOP_RPC -> 3 * 60_000L
-        else -> 60_000L
     }
 
     override fun openTermux(): AppResult<Unit> {

@@ -7,17 +7,17 @@ METADATA="$ROOT/core/termux/src/main/kotlin/dev/mago/android/termux/BridgeBundle
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$TMP/bridge-v2/actions" "$TMP/bridge-v2/lib" "$(dirname "$OUTPUT")"
-install -m 700 "$ROOT/termux-bridge/scripts/dispatch.sh" "$TMP/bridge-v2/dispatch.sh"
-install -m 700 "$ROOT/termux-bridge/scripts/lib/common.sh" "$TMP/bridge-v2/lib/common.sh"
+mkdir -p "$TMP/bridge-v1/actions" "$TMP/bridge-v1/lib" "$(dirname "$OUTPUT")"
+install -m 700 "$ROOT/termux-bridge/scripts/dispatch.sh" "$TMP/bridge-v1/dispatch.sh"
+install -m 700 "$ROOT/termux-bridge/scripts/lib/common.sh" "$TMP/bridge-v1/lib/common.sh"
 for script in "$ROOT"/termux-bridge/scripts/actions/*.sh; do
-  install -m 700 "$script" "$TMP/bridge-v2/actions/$(basename "$script")"
+  install -m 700 "$script" "$TMP/bridge-v1/actions/$(basename "$script")"
 done
 
 tar --sort=name \
   --mtime='UTC 2026-01-01 00:00:00' \
   --owner=0 --group=0 --numeric-owner \
-  -C "$TMP" -cf - bridge-v2 | gzip -n > "$OUTPUT"
+  -C "$TMP" -cf - bridge-v1 | gzip -n > "$OUTPUT"
 
 digest="$(sha256sum "$OUTPUT" | awk '{print $1}')"
 python3 - "$METADATA" "$digest" <<'PY'

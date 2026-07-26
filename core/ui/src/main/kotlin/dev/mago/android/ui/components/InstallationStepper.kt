@@ -42,6 +42,7 @@ fun InstallationStepper(
             val stages = listOf(
                 InstallationStage.CHECKING_DEVICE,
                 InstallationStage.TERMUX_REQUIRED,
+                InstallationStage.TERMUX_INITIALIZATION_REQUIRED,
                 InstallationStage.PERMISSION_REQUIRED,
                 InstallationStage.DEPLOYING_BRIDGE,
                 InstallationStage.UPDATING_PACKAGES,

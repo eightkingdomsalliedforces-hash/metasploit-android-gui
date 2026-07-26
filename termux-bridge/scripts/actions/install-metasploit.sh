@@ -1,33 +1,34 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
-ACTION="INSTALL_METASPLOIT"; OPERATION_ID="${1:-missing-operation-id}"
-with_install_lock "$ACTION" "$OPERATION_ID"
-for command in git ruby gem bundle; do command_exists "$command" || bridge_fail "$ACTION" "$OPERATION_ID" 69 "Missing dependency: $command"; done
-if [[ ! -d "$MAGO_MSF_DIR/.git" ]]; then
-  rm -rf "$MAGO_MSF_DIR"
-  if ! git clone --depth 1 https://github.com/rapid7/metasploit-framework.git "$MAGO_MSF_DIR" >"$MAGO_LOG_DIR/metasploit-clone.log" 2>&1; then
-    bridge_fail "$ACTION" "$OPERATION_ID" 74 "Unable to download Metasploit from Rapid7" '{"log":"metasploit-clone.log"}'
+ACTION=INSTALL_METASPLOIT; OPERATION_ID="${1:-missing-operation-id}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; source "$SCRIPT_DIR/lib/common.sh"
+readonly UPSTREAM=https://github.com/rapid7/metasploit-framework.git
+install_framework() {
+  require_command "$ACTION" "$OPERATION_ID" git 74
+  require_command "$ACTION" "$OPERATION_ID" ruby 74
+  require_command "$ACTION" "$OPERATION_ID" gem 74
+  if [[ -d "$MAGO_FRAMEWORK_DIR/.git" ]]; then
+    remote="$(git -C "$MAGO_FRAMEWORK_DIR" remote get-url origin 2>/dev/null || true)"
+    [[ "$remote" == "$UPSTREAM" ]] || bridge_fail "$ACTION" "$OPERATION_ID" 74 "Existing framework repository has an unexpected origin"
+    git -C "$MAGO_FRAMEWORK_DIR" fetch --depth 1 origin master || bridge_fail "$ACTION" "$OPERATION_ID" 74 "Unable to refresh the Rapid7 repository"
+    git -C "$MAGO_FRAMEWORK_DIR" reset --hard FETCH_HEAD >/dev/null
+  elif [[ -e "$MAGO_FRAMEWORK_DIR" ]]; then
+    bridge_fail "$ACTION" "$OPERATION_ID" 74 "Framework path exists but is not a Git repository"
+  else
+    git clone --depth 1 --branch master "$UPSTREAM" "$MAGO_FRAMEWORK_DIR" || bridge_fail "$ACTION" "$OPERATION_ID" 74 "Unable to clone the Rapid7 repository"
   fi
-else
-  origin="$(git -C "$MAGO_MSF_DIR" remote get-url origin 2>/dev/null || true)"
-  [[ "$origin" == "https://github.com/rapid7/metasploit-framework.git" ]] || bridge_fail "$ACTION" "$OPERATION_ID" 70 "Existing Metasploit directory has an untrusted origin"
-fi
-bundle_version="$(awk '/^BUNDLED WITH/{getline; gsub(/^[[:space:]]+/, ""); print; exit}' "$MAGO_MSF_DIR/Gemfile.lock")"
-[[ "$bundle_version" =~ ^[0-9]+([.][0-9]+)+$ ]] || bridge_fail "$ACTION" "$OPERATION_ID" 70 "Unable to determine the required Bundler version"
-if ! gem install bundler -v "$bundle_version" --no-document >"$MAGO_LOG_DIR/bundler-install.log" 2>&1; then
-  bridge_fail "$ACTION" "$OPERATION_ID" 70 "Unable to install the required Bundler version" '{"log":"bundler-install.log"}'
-fi
-(
-  cd "$MAGO_MSF_DIR"
-  bundle config set --local path "$MAGO_HOME/bundle"
-  bundle config set --local without 'development test coverage'
-  bundle install --jobs 2 --retry 3
-) >"$MAGO_LOG_DIR/bundle-install.log" 2>&1 || bridge_fail "$ACTION" "$OPERATION_ID" 70 "Metasploit Ruby dependencies failed to install" '{"log":"bundle-install.log"}'
-for executable in msfconsole msfrpcd msfdb; do
-  [[ -f "$MAGO_MSF_DIR/$executable" ]] || bridge_fail "$ACTION" "$OPERATION_ID" 70 "Metasploit executable is missing: $executable"
-  write_wrapper "$executable"
-done
-commit="$(git -C "$MAGO_MSF_DIR" rev-parse --short=12 HEAD)"
-bridge_ok "$ACTION" "$OPERATION_ID" "Metasploit installed" 100 "{\"commit\":\"$(json_escape "$commit")\"}"
+  cd "$MAGO_FRAMEWORK_DIR"
+  bundler_version="$(awk '/^BUNDLED WITH/{getline; gsub(/^[[:space:]]+/, ""); print; exit}' Gemfile.lock)"
+  [[ "$bundler_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || bridge_fail "$ACTION" "$OPERATION_ID" 75 "Unable to determine the required Bundler version"
+  gem install bundler -v "$bundler_version" --no-document || bridge_fail "$ACTION" "$OPERATION_ID" 75 "Unable to install the required Bundler version"
+  bundle config set --local path "$MAGO_BUNDLE_DIR"
+  bundle config set --local without 'development test'
+  bundle install --jobs "${MAGO_BUNDLE_JOBS:-2}" --retry 3 || bridge_fail "$ACTION" "$OPERATION_ID" 75 "Unable to install Metasploit Ruby dependencies"
+  local executable
+  for executable in msfconsole msfrpcd msfdb; do
+    [[ -x "$MAGO_FRAMEWORK_DIR/$executable" ]] || bridge_fail "$ACTION" "$OPERATION_ID" 75 "Metasploit executable is missing: $executable"
+  done
+  commit="$(git -C "$MAGO_FRAMEWORK_DIR" rev-parse --short=12 HEAD)"
+  bridge_ok "$ACTION" "$OPERATION_ID" "Metasploit Framework installed" 100 "commit" "$commit" "source" "$UPSTREAM"
+}
+with_install_lock "$ACTION" "$OPERATION_ID" install_framework

@@ -4,19 +4,20 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class RpcSecretRecordCodecTest {
+    private val codec = RpcSecretRecordCodec()
+
     @Test
-    fun `round trips versioned encrypted record`() {
-        val record = RpcSecretRecord(ByteArray(12) { it.toByte() }, byteArrayOf(4, 5, 6, 7))
-        val decoded = RpcSecretRecordCodec.decode(RpcSecretRecordCodec.encode(record))
-        assertThat(decoded).isNotNull()
-        assertThat(decoded!!.iv).isEqualTo(record.iv)
-        assertThat(decoded.ciphertext).isEqualTo(record.ciphertext)
+    fun `versioned record round trips binary data`() {
+        val record = codec.decode(codec.encode(byteArrayOf(1, 2, 3), byteArrayOf(4, 5, 6)))
+
+        assertThat(record).isNotNull()
+        assertThat(record!!.iv.contentEquals(byteArrayOf(1, 2, 3))).isTrue()
+        assertThat(record.ciphertext.contentEquals(byteArrayOf(4, 5, 6))).isTrue()
     }
 
     @Test
-    fun `rejects unknown version and malformed data`() {
-        assertThat(RpcSecretRecordCodec.decode("v2.AA==.AA==")).isNull()
-        assertThat(RpcSecretRecordCodec.decode("v1.not-base64.bad")).isNull()
-        assertThat(RpcSecretRecordCodec.decode("v1.AA==.AA==")).isNull()
+    fun `unknown or malformed record is rejected`() {
+        assertThat(codec.decode("v2.a.b")).isNull()
+        assertThat(codec.decode("v1.***.***")).isNull()
     }
 }

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf 'openssl %s\n' "$*" >> "${MAGO_FAKE_LOG:?}"
+exit 0

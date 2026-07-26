@@ -57,6 +57,6 @@ class AppContainer(context: Context) {
         termuxGateway = termuxGateway,
         metasploitRepository = metasploitConnectionRepository,
         installationStateRepository = installationStateRepository,
-        saveRpcPassword = secretStore::saveRpcPassword,
+        secretStore = secretStore,
     )
 }
