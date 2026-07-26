@@ -25,6 +25,13 @@ value class RpcMethod(val value: String) {
         val MODULE_NOPS = RpcMethod("module.nops")
         val MODULE_EVASION = RpcMethod("module.evasion")
         val MODULE_INFO = RpcMethod("module.info")
+        val MODULE_OPTIONS = RpcMethod("module.options")
+        val MODULE_SEARCH = RpcMethod("module.search")
+        val MODULE_COMPATIBLE_PAYLOADS = RpcMethod("module.compatible_payloads")
+        val MODULE_COMPATIBLE_EVASION_PAYLOADS = RpcMethod("module.compatible_evasion_payloads")
+        val MODULE_CHECK = RpcMethod("module.check")
+        val MODULE_EXECUTE = RpcMethod("module.execute")
+        val MODULE_RESULTS = RpcMethod("module.results")
 
         val CONSOLE_CREATE = RpcMethod("console.create")
         val CONSOLE_READ = RpcMethod("console.read")
