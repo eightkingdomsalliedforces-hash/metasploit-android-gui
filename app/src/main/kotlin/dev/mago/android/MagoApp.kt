@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -36,6 +37,7 @@ import dev.mago.android.diagnostics.DiagnosticsScreen
 import dev.mago.android.installation.InstallationStage
 import dev.mago.android.installation.InstallationState
 import dev.mago.android.model.DiagnosticEntry
+import dev.mago.android.model.MetasploitJobSummary
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
 import dev.mago.android.modules.ModuleListMode
@@ -43,6 +45,9 @@ import dev.mago.android.modules.ModulesScreen
 import dev.mago.android.modules.ModulesUiState
 import dev.mago.android.navigation.MagoDestination
 import dev.mago.android.onboarding.OnboardingRoute
+import dev.mago.android.operations.OperationsScreen
+import dev.mago.android.operations.OperationsTab
+import dev.mago.android.operations.OperationsUiState
 import dev.mago.android.terminal.TerminalScreen
 import dev.mago.android.terminal.TerminalUiState
 import dev.mago.android.ui.theme.MagoTheme
@@ -52,6 +57,7 @@ fun MagoApp(
     installationState: InstallationState,
     dashboardState: DashboardUiState,
     modulesState: ModulesUiState,
+    operationsState: OperationsUiState,
     terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
@@ -71,6 +77,10 @@ fun MagoApp(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onOperationsTabSelected: (OperationsTab) -> Unit,
+    onOperationsRefresh: () -> Unit,
+    onOperationsJobSelected: (MetasploitJobSummary) -> Unit,
+    onOperationsClearJob: () -> Unit,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -98,6 +108,7 @@ fun MagoApp(
             val permanentDestinations = listOf(
                 Triple(MagoDestination.Dashboard, Icons.Default.Home, "首頁"),
                 Triple(MagoDestination.Modules, Icons.Default.Apps, "模組"),
+                Triple(MagoDestination.Operations, Icons.Default.Work, "Operations"),
                 Triple(MagoDestination.Terminal, Icons.Default.Code, "Console"),
                 Triple(MagoDestination.Diagnostics, Icons.Default.MonitorHeart, "診斷"),
             )
@@ -120,6 +131,7 @@ fun MagoApp(
                         installationState = installationState,
                         dashboardState = dashboardState,
                         modulesState = modulesState,
+                        operationsState = operationsState,
                         terminalState = terminalState,
                         diagnostics = diagnostics,
                         onRetry = onRetry,
@@ -140,6 +152,10 @@ fun MagoApp(
                         onModuleConfirmRun = onModuleConfirmRun,
                         onModuleCancelRun = onModuleCancelRun,
                         onModuleRefreshResult = onModuleRefreshResult,
+                        onOperationsTabSelected = onOperationsTabSelected,
+                        onOperationsRefresh = onOperationsRefresh,
+                        onOperationsJobSelected = onOperationsJobSelected,
+                        onOperationsClearJob = onOperationsClearJob,
                         onTerminalStart = onTerminalStart,
                         onTerminalStop = onTerminalStop,
                         onTerminalInputChanged = onTerminalInputChanged,
@@ -171,6 +187,7 @@ fun MagoApp(
                         installationState = installationState,
                         dashboardState = dashboardState,
                         modulesState = modulesState,
+                        operationsState = operationsState,
                         terminalState = terminalState,
                         diagnostics = diagnostics,
                         onRetry = onRetry,
@@ -191,6 +208,10 @@ fun MagoApp(
                         onModuleConfirmRun = onModuleConfirmRun,
                         onModuleCancelRun = onModuleCancelRun,
                         onModuleRefreshResult = onModuleRefreshResult,
+                        onOperationsTabSelected = onOperationsTabSelected,
+                        onOperationsRefresh = onOperationsRefresh,
+                        onOperationsJobSelected = onOperationsJobSelected,
+                        onOperationsClearJob = onOperationsClearJob,
                         onTerminalStart = onTerminalStart,
                         onTerminalStop = onTerminalStop,
                         onTerminalInputChanged = onTerminalInputChanged,
@@ -211,6 +232,7 @@ private fun AppNavHost(
     installationState: InstallationState,
     dashboardState: DashboardUiState,
     modulesState: ModulesUiState,
+    operationsState: OperationsUiState,
     terminalState: TerminalUiState,
     diagnostics: List<DiagnosticEntry>,
     onRetry: () -> Unit,
@@ -231,6 +253,10 @@ private fun AppNavHost(
     onModuleConfirmRun: () -> Unit,
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
+    onOperationsTabSelected: (OperationsTab) -> Unit,
+    onOperationsRefresh: () -> Unit,
+    onOperationsJobSelected: (MetasploitJobSummary) -> Unit,
+    onOperationsClearJob: () -> Unit,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -276,6 +302,15 @@ private fun AppNavHost(
                 onConfirmRun = onModuleConfirmRun,
                 onCancelRun = onModuleCancelRun,
                 onRefreshResult = onModuleRefreshResult,
+            )
+        }
+        composable(MagoDestination.Operations.route) {
+            OperationsScreen(
+                state = operationsState,
+                onTabSelected = onOperationsTabSelected,
+                onRefresh = onOperationsRefresh,
+                onJobSelected = onOperationsJobSelected,
+                onClearJobSelection = onOperationsClearJob,
             )
         }
         composable(MagoDestination.Terminal.route) {
