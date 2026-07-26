@@ -57,8 +57,10 @@ class RoomModuleLocalStore(
     }
 
     override suspend fun recordExecution(record: ModuleExecutionRecord) {
-        historyDao.upsertExecution(mapper.execution(record))
-        historyDao.insertAudit(mapper.audit(record))
+        historyDao.recordExecutionAndAudit(
+            execution = mapper.execution(record),
+            audit = mapper.audit(record),
+        )
     }
 
     override suspend fun updateExecution(
@@ -75,8 +77,10 @@ class RoomModuleLocalStore(
             error = error,
             updatedAtEpochMillis = updatedAtEpochMillis,
         )
-        historyDao.upsertExecution(mapper.execution(updated))
-        historyDao.insertAudit(mapper.audit(updated))
+        historyDao.recordExecutionAndAudit(
+            execution = mapper.execution(updated),
+            audit = mapper.audit(updated),
+        )
     }
 
     override suspend fun executionHistory(limit: Int): List<ModuleExecutionRecord> =
