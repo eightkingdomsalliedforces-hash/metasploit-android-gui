@@ -37,4 +37,7 @@ dependencies {
     implementation(libs.compose.ui)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
 }
