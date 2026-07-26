@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ModuleCatalogDao {
+    @Query("SELECT * FROM module_index ORDER BY type, name LIMIT :limit")
+    suspend fun listAll(limit: Int): List<ModuleIndexEntity>
+
     @Query("SELECT * FROM module_index WHERE type = :type ORDER BY name LIMIT :limit")
     suspend fun listByType(type: String, limit: Int): List<ModuleIndexEntity>
 
@@ -43,6 +46,9 @@ interface ModuleCatalogDao {
     @Query("DELETE FROM module_search_fts WHERE type = :type")
     suspend fun deleteSearchByType(type: String)
 
+    @Query("DELETE FROM module_search_fts WHERE type = :type AND name = :name")
+    suspend fun deleteSearchItem(type: String, name: String)
+
     @Query("DELETE FROM module_index WHERE type = :type")
     suspend fun deleteIndexByType(type: String)
 
@@ -56,6 +62,16 @@ interface ModuleCatalogDao {
         deleteIndexByType(type)
         if (indexValues.isNotEmpty()) insertIndex(indexValues)
         if (searchValues.isNotEmpty()) insertSearch(searchValues)
+    }
+
+    @Transaction
+    suspend fun upsertDetail(
+        indexValue: ModuleIndexEntity,
+        searchValue: ModuleSearchFtsEntity,
+    ) {
+        insertIndex(listOf(indexValue))
+        deleteSearchItem(indexValue.type, indexValue.name)
+        insertSearch(listOf(searchValue))
     }
 
     @Query("SELECT EXISTS(SELECT 1 FROM module_favorite WHERE type = :type AND name = :name)")
