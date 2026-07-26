@@ -11,6 +11,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.mago.android.dashboard.DashboardViewModel
 import dev.mago.android.modules.ModulesViewModel
 import dev.mago.android.onboarding.OnboardingViewModel
+import dev.mago.android.operations.OperationsViewModel
 import dev.mago.android.terminal.TerminalViewModel
 
 class MainActivity : ComponentActivity() {
@@ -26,6 +27,9 @@ class MainActivity : ComponentActivity() {
     private val modulesViewModel by viewModels<ModulesViewModel> {
         ModulesViewModel.factory(container.metasploitModuleRepository)
     }
+    private val operationsViewModel by viewModels<OperationsViewModel> {
+        OperationsViewModel.factory(container.metasploitJobRepository, container.metasploitSessionRepository)
+    }
     private val terminalViewModel by viewModels<TerminalViewModel> {
         TerminalViewModel.factory(container.metasploitConsoleRepository)
     }
@@ -39,12 +43,14 @@ class MainActivity : ComponentActivity() {
             val installationState by onboardingViewModel.state.collectAsStateWithLifecycle()
             val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
             val modulesState by modulesViewModel.uiState.collectAsStateWithLifecycle()
+            val operationsState by operationsViewModel.uiState.collectAsStateWithLifecycle()
             val terminalState by terminalViewModel.uiState.collectAsStateWithLifecycle()
             val diagnostics by container.bootstrapCoordinator.diagnostics.collectAsStateWithLifecycle()
             MagoApp(
                 installationState = installationState,
                 dashboardState = dashboardState,
                 modulesState = modulesState,
+                operationsState = operationsState,
                 terminalState = terminalState,
                 diagnostics = diagnostics,
                 onRetry = onboardingViewModel::retry,
@@ -64,6 +70,26 @@ class MainActivity : ComponentActivity() {
                 onModuleConfirmRun = modulesViewModel::confirmRun,
                 onModuleCancelRun = modulesViewModel::cancelRun,
                 onModuleRefreshResult = modulesViewModel::refreshResult,
+                operationsActions = OperationsActions(
+                    onTabSelected = operationsViewModel::selectTab,
+                    onRefreshJobs = operationsViewModel::refreshJobs,
+                    onRefreshSessions = operationsViewModel::refreshSessions,
+                    onJobSelected = operationsViewModel::selectJob,
+                    onSessionSelected = operationsViewModel::selectSession,
+                    onRequestStopJob = operationsViewModel::requestStopJob,
+                    onRequestStopSession = operationsViewModel::requestStopSession,
+                    onCancelStop = operationsViewModel::cancelStop,
+                    onConfirmStop = operationsViewModel::confirmStop,
+                    onRequestInteraction = operationsViewModel::requestInteraction,
+                    onInteractionAuthorizationChanged = operationsViewModel::setInteractionAuthorizationConfirmed,
+                    onCancelInteractionRequest = operationsViewModel::cancelInteractionRequest,
+                    onOpenInteraction = operationsViewModel::openInteraction,
+                    onSessionInputChanged = operationsViewModel::setSessionInput,
+                    onSendSessionInput = operationsViewModel::sendSessionInput,
+                    onReadSessionOutput = operationsViewModel::readSessionOutput,
+                    onClearSessionOutput = operationsViewModel::clearSessionOutput,
+                    onCloseInteraction = operationsViewModel::closeInteraction,
+                ),
                 onTerminalStart = terminalViewModel::start,
                 onTerminalStop = terminalViewModel::stop,
                 onTerminalInputChanged = terminalViewModel::setInput,
