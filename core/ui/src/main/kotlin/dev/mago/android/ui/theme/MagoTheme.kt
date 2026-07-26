@@ -5,7 +5,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import dev.mago.android.ui.accessibility.LocalReducedMotion
 
 enum class MagoThemeMode { SYSTEM, LIGHT, DARK, AMOLED }
 
@@ -39,6 +43,8 @@ private val AmoledColors = darkColorScheme(
 @Composable
 fun MagoTheme(
     mode: MagoThemeMode = MagoThemeMode.SYSTEM,
+    fontScale: Float = 1.0f,
+    reducedMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val useDark = when (mode) {
@@ -51,5 +57,11 @@ fun MagoTheme(
         useDark -> DarkColors
         else -> LightColors
     }
-    MaterialTheme(colorScheme = colors, content = content)
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, fontScale.coerceIn(1.0f, 2.0f)),
+        LocalReducedMotion provides reducedMotion,
+    ) {
+        MaterialTheme(colorScheme = colors, content = content)
+    }
 }

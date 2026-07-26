@@ -18,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import dev.mago.android.common.AppResult
 import dev.mago.android.dashboard.DashboardViewModel
+import dev.mago.android.datastore.FontScale
+import dev.mago.android.datastore.ThemeMode as StoredThemeMode
 import dev.mago.android.inventory.InventoryViewModel
 import dev.mago.android.modules.ModulesViewModel
 import dev.mago.android.onboarding.OnboardingViewModel
@@ -25,6 +27,7 @@ import dev.mago.android.reporting.ReportDocument
 import dev.mago.android.reporting.ReportFormat
 import dev.mago.android.reports.ReportsViewModel
 import dev.mago.android.terminal.TerminalViewModel
+import dev.mago.android.ui.theme.MagoThemeMode
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
@@ -33,6 +36,9 @@ class MainActivity : FragmentActivity() {
 
     private val appLockViewModel by viewModels<AppLockViewModel> {
         AppLockViewModel.factory(container.appLockSettingsStore)
+    }
+    private val userPreferencesViewModel by viewModels<UserPreferencesViewModel> {
+        UserPreferencesViewModel.factory(container.userPreferencesRepository)
     }
     private val onboardingViewModel by viewModels<OnboardingViewModel> {
         OnboardingViewModel.factory(container.bootstrapCoordinator)
@@ -74,20 +80,31 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             val appLockState by appLockViewModel.uiState.collectAsStateWithLifecycle()
+            val preferencesState by userPreferencesViewModel.uiState.collectAsStateWithLifecycle()
+            val preferences = preferencesState.preferences
+            val themeMode = preferences.themeMode.toUiThemeMode()
+            val fontScale = preferences.fontScale.multiplier
+
             when {
                 !appLockState.initialized -> AppLockScreen(
                     initializing = true,
                     authenticationInProgress = false,
                     errorMessage = appLockState.errorMessage,
+                    themeMode = themeMode,
+                    fontScale = fontScale,
+                    reducedMotion = preferences.reducedMotion,
                     onUnlock = {},
                 )
                 appLockState.locked -> AppLockScreen(
                     initializing = false,
                     authenticationInProgress = appLockState.pendingAuthPurpose != null,
                     errorMessage = appLockState.errorMessage,
+                    themeMode = themeMode,
+                    fontScale = fontScale,
+                    reducedMotion = preferences.reducedMotion,
                     onUnlock = { requestAuthentication(AppLockAuthPurpose.UNLOCK) },
                 )
-                else -> UnlockedMagoContent(appLockState)
+                else -> UnlockedMagoContent(appLockState, preferencesState)
             }
         }
     }
@@ -155,7 +172,10 @@ class MainActivity : FragmentActivity() {
     }
 
     @Composable
-    private fun UnlockedMagoContent(appLockState: AppLockUiState) {
+    private fun UnlockedMagoContent(
+        appLockState: AppLockUiState,
+        preferencesState: UserPreferencesUiState,
+    ) {
         fun handleReportDestination(uri: Uri?) {
             val document = pendingReport
             pendingReport = null
@@ -202,6 +222,8 @@ class MainActivity : FragmentActivity() {
         val reportsState by reportsViewModel.uiState.collectAsStateWithLifecycle()
         val terminalState by terminalViewModel.uiState.collectAsStateWithLifecycle()
         val diagnostics by container.bootstrapCoordinator.diagnostics.collectAsStateWithLifecycle()
+        val preferences = preferencesState.preferences
+        val themeMode = preferences.themeMode.toUiThemeMode()
 
         LaunchedEffect(reportsState.pendingDocument?.id) {
             val document = reportsState.pendingDocument ?: return@LaunchedEffect
@@ -226,17 +248,33 @@ class MainActivity : FragmentActivity() {
                 appLockEnabled = appLockState.enabled,
                 appLockSettingBusy = appLockState.saving || appLockState.pendingAuthPurpose != null,
                 appLockError = appLockState.errorMessage,
+                themeMode = themeMode,
+                fontScalePercent = preferences.fontScale.percent,
+                reducedMotion = preferences.reducedMotion,
+                displayPreferencesSaving = preferencesState.saving,
+                displayPreferencesError = preferencesState.errorMessage,
                 onRequestAppLockChange = { enabled ->
                     requestAuthentication(
                         if (enabled) AppLockAuthPurpose.ENABLE else AppLockAuthPurpose.DISABLE,
                     )
                 },
+                onThemeModeChanged = { mode ->
+                    userPreferencesViewModel.setThemeMode(mode.toStoredThemeMode())
+                },
+                onFontScaleChanged = { percent ->
+                    FontScale.entries.firstOrNull { it.percent == percent }
+                        ?.let(userPreferencesViewModel::setFontScale)
+                },
+                onReducedMotionChanged = userPreferencesViewModel::setReducedMotion,
             ),
             inventoryState = inventoryState,
             modulesState = modulesState,
             reportsState = reportsState,
             terminalState = terminalState,
             diagnostics = diagnostics,
+            themeMode = themeMode,
+            fontScale = preferences.fontScale.multiplier,
+            reducedMotion = preferences.reducedMotion,
             onRetry = onboardingViewModel::retry,
             onOpenTermux = onboardingViewModel::openTermux,
             onRequestTermuxPermission = {
@@ -273,6 +311,20 @@ class MainActivity : FragmentActivity() {
             onTerminalRefresh = terminalViewModel::refresh,
             onTerminalClear = terminalViewModel::clearOutput,
         )
+    }
+
+    private fun StoredThemeMode.toUiThemeMode(): MagoThemeMode = when (this) {
+        StoredThemeMode.SYSTEM -> MagoThemeMode.SYSTEM
+        StoredThemeMode.LIGHT -> MagoThemeMode.LIGHT
+        StoredThemeMode.DARK -> MagoThemeMode.DARK
+        StoredThemeMode.AMOLED -> MagoThemeMode.AMOLED
+    }
+
+    private fun MagoThemeMode.toStoredThemeMode(): StoredThemeMode = when (this) {
+        MagoThemeMode.SYSTEM -> StoredThemeMode.SYSTEM
+        MagoThemeMode.LIGHT -> StoredThemeMode.LIGHT
+        MagoThemeMode.DARK -> StoredThemeMode.DARK
+        MagoThemeMode.AMOLED -> StoredThemeMode.AMOLED
     }
 
     private companion object {

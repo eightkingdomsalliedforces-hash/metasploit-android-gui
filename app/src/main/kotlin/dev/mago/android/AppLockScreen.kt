@@ -17,15 +17,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mago.android.ui.theme.MagoTheme
+import dev.mago.android.ui.theme.MagoThemeMode
 
 @Composable
 fun AppLockScreen(
     initializing: Boolean,
     authenticationInProgress: Boolean,
     errorMessage: String?,
+    themeMode: MagoThemeMode,
+    fontScale: Float,
+    reducedMotion: Boolean,
     onUnlock: () -> Unit,
 ) {
-    MagoTheme {
+    MagoTheme(
+        mode = themeMode,
+        fontScale = fontScale,
+        reducedMotion = reducedMotion,
+    ) {
         Surface(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -33,10 +41,10 @@ fun AppLockScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 if (initializing) {
-                    CircularProgressIndicator()
+                    if (!reducedMotion) CircularProgressIndicator()
                     Text(
                         "正在載入安全設定",
-                        modifier = Modifier.padding(top = 16.dp),
+                        modifier = Modifier.padding(top = if (reducedMotion) 0.dp else 16.dp),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text("功能畫面會在安全設定確認後顯示。")
