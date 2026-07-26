@@ -10,7 +10,9 @@ import dev.mago.android.model.MetasploitServiceRecord
 import dev.mago.android.model.MetasploitVulnerabilityRecord
 import dev.mago.android.model.MetasploitWorkspaceSummary
 import dev.mago.android.model.rpc.RpcValue
+import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
+import java.util.zip.ZipInputStream
 import org.junit.Test
 
 class DefaultReportDocumentBuilderTest {
@@ -30,12 +32,46 @@ class DefaultReportDocumentBuilderTest {
     fun `csv follows quoting rules and excludes free form secrets`() {
         val text = builder.build(snapshot(), ReportFormat.CSV).bytes.toString(StandardCharsets.UTF_8)
 
-        assertThat(text.lines().first()).isEqualTo(
+        assertThat(text.substringBefore("\r\n")).isEqualTo(
             "record_type,workspace,primary,secondary,status,created_at,updated_at,details",
         )
         assertThat(text).contains("\"host \"\"quoted\"\"\nline\"")
         assertThat(text).contains("PASSWORD=••••••••")
         assertExcludedSecrets(text)
+    }
+
+    @Test
+    fun `html escapes markup and contains no executable or remote content`() {
+        val base = snapshot()
+        val malicious = base.copy(
+            hosts = listOf(base.hosts.single().copy(name = "<script>alert('x')</script>&")),
+        )
+        val text = builder.build(malicious, ReportFormat.HTML).bytes.toString(StandardCharsets.UTF_8)
+
+        assertThat(text).contains("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;&amp;")
+        assertThat(text).doesNotContain("<script>")
+        assertThat(text).doesNotContain("http://")
+        assertThat(text).doesNotContain("https://")
+        assertThat(text).contains("default-src 'none'")
+        assertExcludedSecrets(text)
+    }
+
+    @Test
+    fun `zip contains exactly fixed safe report entries`() {
+        val document = builder.build(snapshot(), ReportFormat.ZIP)
+        val entries = linkedMapOf<String, String>()
+        ZipInputStream(ByteArrayInputStream(document.bytes)).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes().toString(StandardCharsets.UTF_8)
+                zip.closeEntry()
+            }
+        }
+
+        assertThat(entries.keys).containsExactly("report.json", "report.csv", "report.html").inOrder()
+        entries.values.forEach(::assertExcludedSecrets)
+        assertThat(entries.getValue("report.html")).contains("<!doctype html>")
+        assertThat(entries.getValue("report.json")).contains("\"schemaVersion\":1")
     }
 
     private fun assertExcludedSecrets(text: String) {
