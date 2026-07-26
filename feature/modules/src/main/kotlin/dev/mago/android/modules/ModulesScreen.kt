@@ -14,11 +14,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -26,13 +31,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import dev.mago.android.model.MetasploitModuleInfo
+import dev.mago.android.model.MetasploitModuleOption
+import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
+import dev.mago.android.model.rpc.RpcValue
 
 @Composable
 fun ModulesScreen(
@@ -42,15 +53,81 @@ fun ModulesScreen(
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onBackToList: () -> Unit,
     onRetry: () -> Unit,
+    onOptionChanged: (String, String) -> Unit,
+    onRequestCheck: () -> Unit,
+    onRequestExecute: () -> Unit,
+    onAuthorizationChanged: (Boolean) -> Unit,
+    onConfirmRun: () -> Unit,
+    onCancelRun: () -> Unit,
+    onRefreshResult: () -> Unit,
 ) {
     LaunchedEffect(state.type, state.modules.isEmpty(), state.errorMessage) {
         if (state.modules.isEmpty() && !state.loading && state.errorMessage == null) onRetry()
     }
+    state.confirmation?.let { confirmation ->
+        AlertDialog(
+            onDismissRequest = onCancelRun,
+            title = {
+                Text(
+                    if (confirmation.action == MetasploitModuleRunAction.CHECK) {
+                        "確認執行檢查"
+                    } else {
+                        "確認執行模組"
+                    },
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("模組：${confirmation.request.type.rpcName}/${confirmation.request.name}")
+                    Text("參數摘要中的敏感值已遮罩；此確認不會被記住。")
+                    if (confirmation.redactedOptions.isEmpty()) {
+                        Text("沒有非空白參數")
+                    } else {
+                        confirmation.redactedOptions.forEach { (name, value) ->
+                            Text("$name：$value")
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onAuthorizationChanged(!state.authorizationConfirmed) },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Checkbox(
+                            checked = state.authorizationConfirmed,
+                            onCheckedChange = onAuthorizationChanged,
+                        )
+                        Text("我確認僅在本人擁有或已獲明確授權的環境執行")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onConfirmRun,
+                    enabled = state.authorizationConfirmed && !state.runLoading,
+                ) {
+                    Text(if (confirmation.action == MetasploitModuleRunAction.CHECK) "確認檢查" else "確認執行")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancelRun) { Text("取消") }
+            },
+        )
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val availableWidth = maxWidth
         val wide = availableWidth >= 700.dp
         if (!wide && state.selected != null) {
-            ModuleDetail(state.selected, onBackToList, Modifier.fillMaxSize())
+            ModuleDetail(
+                state = state,
+                onBack = onBackToList,
+                onOptionChanged = onOptionChanged,
+                onRequestCheck = onRequestCheck,
+                onRequestExecute = onRequestExecute,
+                onRefreshResult = onRefreshResult,
+                modifier = Modifier.fillMaxSize(),
+            )
         } else if (wide) {
             Row(Modifier.fillMaxSize()) {
                 ModuleList(
@@ -69,12 +146,16 @@ fun ModulesScreen(
                             .padding(24.dp),
                     ) {
                         Text("選擇模組以查看詳細資料", style = MaterialTheme.typography.titleLarge)
-                        Text("本階段僅讀取模組資訊，不會執行模組。")
+                        Text("模組執行前會顯示參數摘要並要求明確確認。")
                     }
                 } else {
                     ModuleDetail(
-                        state.selected,
+                        state = state,
                         onBack = null,
+                        onOptionChanged = onOptionChanged,
+                        onRequestCheck = onRequestCheck,
+                        onRequestExecute = onRequestExecute,
+                        onRefreshResult = onRefreshResult,
                         modifier = Modifier.width(availableWidth * 0.58f).fillMaxHeight(),
                     )
                 }
@@ -150,10 +231,15 @@ private fun ModuleList(
 
 @Composable
 private fun ModuleDetail(
-    info: MetasploitModuleInfo,
+    state: ModulesUiState,
     onBack: (() -> Unit)?,
+    onOptionChanged: (String, String) -> Unit,
+    onRequestCheck: () -> Unit,
+    onRequestExecute: () -> Unit,
+    onRefreshResult: () -> Unit,
     modifier: Modifier,
 ) {
+    val info = state.selected ?: return
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -172,29 +258,131 @@ private fun ModuleDetail(
         if (info.authors.isNotEmpty()) Text("作者：${info.authors.joinToString()}")
         Text("Check：${if (info.hasCheck) "支援" else "不支援"}")
         info.stance?.let { Text("Stance：$it") }
+
+        HorizontalDivider()
         Text("參數", style = MaterialTheme.typography.titleLarge)
-        if (info.options.isEmpty()) Text("此模組沒有可顯示的參數")
-        info.options.forEach { option ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(option.name, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        listOfNotNull(
-                            option.type,
-                            if (option.required) "必填" else null,
-                            if (option.advanced) "進階" else null,
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.labelMedium,
+        val basic = info.options.filterNot { it.advanced }
+        val advanced = info.options.filter { it.advanced }
+        if (basic.isEmpty() && advanced.isEmpty()) Text("此模組沒有可顯示的參數")
+        OptionFields(basic, state, onOptionChanged)
+        if (advanced.isNotEmpty()) {
+            Text("進階參數", style = MaterialTheme.typography.titleMedium)
+            OptionFields(advanced, state, onOptionChanged)
+        }
+
+        if (state.compatiblePayloads.isNotEmpty()) {
+            Text("相容 Payload", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.compatiblePayloads.forEach { payload ->
+                    FilterChip(
+                        selected = state.optionValues["PAYLOAD"] == payload,
+                        onClick = { onOptionChanged("PAYLOAD", payload) },
+                        label = { Text(payload) },
                     )
-                    if (option.description.isNotBlank()) Text(option.description)
-                    option.defaultValue?.let { Text("預設：$it") }
-                    if (option.enums.isNotEmpty()) Text("可選：${option.enums.joinToString()}")
                 }
             }
         }
+
+        state.runErrorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.runLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (state.canCheck) {
+                OutlinedButton(onClick = onRequestCheck, enabled = !state.runLoading) {
+                    Text("執行檢查")
+                }
+            }
+            if (state.canExecute) {
+                Button(onClick = onRequestExecute, enabled = !state.runLoading) {
+                    Text("執行模組")
+                }
+            }
+        }
+
+        state.launch?.let { launch ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("模組已送出", style = MaterialTheme.typography.titleMedium)
+                    Text("UUID：${launch.uuid}")
+                    launch.jobId?.let { Text("Job ID：$it") }
+                    OutlinedButton(onClick = onRefreshResult, enabled = !state.runLoading) {
+                        Text("重新整理結果")
+                    }
+                    state.runResult?.let { result ->
+                        Text("狀態：${result.status.name}")
+                        result.error?.let { Text("錯誤：$it", color = MaterialTheme.colorScheme.error) }
+                        result.result?.let { Text("結果：${it.displayText()}") }
+                    }
+                }
+            }
+        }
+
         if (info.references.isNotEmpty()) {
+            HorizontalDivider()
             Text("參考資料", style = MaterialTheme.typography.titleLarge)
             info.references.forEach { Text("${it.type}：${it.value}") }
         }
     }
 }
+
+@Composable
+private fun OptionFields(
+    options: List<MetasploitModuleOption>,
+    state: ModulesUiState,
+    onOptionChanged: (String, String) -> Unit,
+) {
+    options.forEach { option ->
+        val error = state.validationErrors[option.name]
+        val numeric = option.type.lowercase() in setOf("int", "integer", "port")
+        val sensitive = MODULE_RUN_VALIDATOR.isSensitive(option.name)
+        OutlinedTextField(
+            value = state.optionValues[option.name].orEmpty(),
+            onValueChange = { onOptionChanged(option.name, it) },
+            label = { Text(option.name + if (option.required) " *" else "") },
+            supportingText = {
+                Text(error ?: option.description.ifBlank { option.type })
+            },
+            isError = error != null,
+            singleLine = option.type.lowercase() !in setOf("text", "string") ||
+                !option.description.contains("command", ignoreCase = true),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
+            ),
+            visualTransformation = if (sensitive) {
+                PasswordVisualTransformation()
+            } else {
+                VisualTransformation.None
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (option.enums.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                option.enums.forEach { value ->
+                    FilterChip(
+                        selected = state.optionValues[option.name] == value,
+                        onClick = { onOptionChanged(option.name, value) },
+                        label = { Text(value) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun RpcValue.displayText(): String = when (this) {
+    RpcValue.Nil -> "無"
+    is RpcValue.Bool -> value.toString()
+    is RpcValue.IntValue -> value.toString()
+    is RpcValue.FloatValue -> value.toString()
+    is RpcValue.StringValue -> value
+    is RpcValue.BinaryValue -> "二進位資料（${value.size} bytes）"
+    is RpcValue.ArrayValue -> value.joinToString(", ") { it.displayText() }
+    is RpcValue.MapValue -> value.entries.joinToString("\n") { (key, item) -> "$key：${item.displayText()}" }
+}
+
+private val MODULE_RUN_VALIDATOR = ModuleRunValidator()

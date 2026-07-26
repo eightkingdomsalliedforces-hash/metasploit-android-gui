@@ -3,8 +3,12 @@ package dev.mago.android.rpc.service
 import dev.mago.android.common.AppResult
 import dev.mago.android.model.AppError
 import dev.mago.android.model.MetasploitModuleInfo
+import dev.mago.android.model.MetasploitModuleLaunch
 import dev.mago.android.model.MetasploitModuleOption
 import dev.mago.android.model.MetasploitModuleReference
+import dev.mago.android.model.MetasploitModuleRequest
+import dev.mago.android.model.MetasploitModuleRunResult
+import dev.mago.android.model.MetasploitModuleRunStatus
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
 import dev.mago.android.model.rpc.RpcValue
@@ -39,6 +43,101 @@ class RpcModuleService(private val transport: RpcTransport) {
             is AppResult.Failure -> result
             is AppResult.Success -> parseInfo(type, name, result.value)
         }
+    }
+
+    suspend fun compatiblePayloads(
+        token: String,
+        type: MetasploitModuleType,
+        name: String,
+    ): AppResult<List<String>> {
+        val method = when (type) {
+            MetasploitModuleType.EXPLOIT -> RpcMethod.MODULE_COMPATIBLE_PAYLOADS
+            MetasploitModuleType.EVASION -> RpcMethod.MODULE_COMPATIBLE_EVASION_PAYLOADS
+            else -> return AppResult.Success(emptyList())
+        }
+        val result = transport.call(method, token, listOf(RpcValue.StringValue(name)))
+        return when (result) {
+            is AppResult.Failure -> result
+            is AppResult.Success -> {
+                val payloads = (result.value.mapOrNull()?.get("payloads") as? RpcValue.ArrayValue)?.value
+                    ?.mapNotNull { (it as? RpcValue.StringValue)?.value }
+                if (payloads == null) invalid("RPC_COMPATIBLE_PAYLOADS_INVALID", "相容 Payload 格式不正確")
+                else AppResult.Success(payloads.sorted())
+            }
+        }
+    }
+
+    suspend fun check(token: String, request: MetasploitModuleRequest): AppResult<MetasploitModuleLaunch> =
+        launch(token, RpcMethod.MODULE_CHECK, request)
+
+    suspend fun execute(token: String, request: MetasploitModuleRequest): AppResult<MetasploitModuleLaunch> =
+        launch(token, RpcMethod.MODULE_EXECUTE, request)
+
+    suspend fun result(token: String, uuid: String): AppResult<MetasploitModuleRunResult> {
+        if (uuid.isBlank()) return invalid("RPC_MODULE_UUID_INVALID", "模組執行 UUID 不可為空", retryable = false)
+        return when (
+            val response = transport.call(
+                RpcMethod.MODULE_RESULTS,
+                token,
+                listOf(RpcValue.StringValue(uuid)),
+            )
+        ) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> parseRunResult(response.value)
+        }
+    }
+
+    private suspend fun launch(
+        token: String,
+        method: RpcMethod,
+        request: MetasploitModuleRequest,
+    ): AppResult<MetasploitModuleLaunch> {
+        if (!request.userConfirmed) {
+            return invalid(
+                "RPC_MODULE_CONFIRMATION_REQUIRED",
+                "模組執行需要使用者明確確認",
+                retryable = false,
+            )
+        }
+        if (request.name.isBlank()) return invalid("RPC_MODULE_NAME_INVALID", "模組名稱不可為空", retryable = false)
+        val optionValues = request.options.mapValues { RpcValue.StringValue(it.value) }
+        val arguments = listOf(
+            RpcValue.StringValue(request.type.rpcName),
+            RpcValue.StringValue(request.name),
+            RpcValue.MapValue(optionValues),
+        )
+        return when (val response = transport.call(method, token, arguments)) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> parseLaunch(response.value)
+        }
+    }
+
+    private fun parseLaunch(value: RpcValue): AppResult<MetasploitModuleLaunch> {
+        val map = value.mapOrNull()
+            ?: return invalid("RPC_MODULE_LAUNCH_INVALID", "Metasploit 執行回應格式不正確")
+        val uuid = map.string("uuid")?.takeIf { it.isNotBlank() }
+            ?: return invalid("RPC_MODULE_UUID_MISSING", "Metasploit 沒有回傳執行 UUID")
+        val jobId = (map["job_id"] as? RpcValue.IntValue)?.value
+        return AppResult.Success(MetasploitModuleLaunch(jobId = jobId, uuid = uuid))
+    }
+
+    private fun parseRunResult(value: RpcValue): AppResult<MetasploitModuleRunResult> {
+        val map = value.mapOrNull()
+            ?: return invalid("RPC_MODULE_RESULT_INVALID", "Metasploit 結果格式不正確")
+        val status = when (map.string("status")?.lowercase()) {
+            "ready" -> MetasploitModuleRunStatus.READY
+            "running" -> MetasploitModuleRunStatus.RUNNING
+            "completed" -> MetasploitModuleRunStatus.COMPLETED
+            "errored" -> MetasploitModuleRunStatus.ERRORED
+            else -> return invalid("RPC_MODULE_STATUS_INVALID", "Metasploit 回傳未知的執行狀態")
+        }
+        return AppResult.Success(
+            MetasploitModuleRunResult(
+                status = status,
+                result = map["result"],
+                error = map["error"]?.displayValue(),
+            ),
+        )
     }
 
     private fun parseInfo(
@@ -114,7 +213,9 @@ class RpcModuleService(private val transport: RpcTransport) {
         is RpcValue.StringValue -> value
         is RpcValue.BinaryValue -> null
         is RpcValue.ArrayValue -> value.mapNotNull { it.displayValue() }.joinToString(", ")
-        is RpcValue.MapValue -> null
+        is RpcValue.MapValue -> value.entries.joinToString(", ") { (key, item) ->
+            "$key=${item.displayValue().orEmpty()}"
+        }
     }
 
     private fun <T> invalid(code: String, message: String, retryable: Boolean = true): AppResult<T> =

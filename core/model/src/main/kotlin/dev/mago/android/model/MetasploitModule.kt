@@ -50,3 +50,33 @@ data class MetasploitModuleInfo(
     val options: List<MetasploitModuleOption>,
     val extraFields: Map<String, RpcValue>,
 )
+
+enum class MetasploitModuleRunAction {
+    CHECK,
+    EXECUTE,
+}
+
+data class MetasploitModuleRequest(
+    val type: MetasploitModuleType,
+    val name: String,
+    val options: Map<String, String>,
+    val userConfirmed: Boolean = false,
+)
+
+data class MetasploitModuleLaunch(
+    val jobId: Long?,
+    val uuid: String,
+)
+
+enum class MetasploitModuleRunStatus {
+    READY,
+    RUNNING,
+    COMPLETED,
+    ERRORED,
+}
+
+data class MetasploitModuleRunResult(
+    val status: MetasploitModuleRunStatus,
+    val result: RpcValue? = null,
+    val error: String? = null,
+)
