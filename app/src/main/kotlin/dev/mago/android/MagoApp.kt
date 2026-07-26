@@ -35,12 +35,12 @@ import androidx.navigation.compose.rememberNavController
 import dev.mago.android.dashboard.DashboardScreen
 import dev.mago.android.dashboard.DashboardUiState
 import dev.mago.android.diagnostics.DiagnosticsScreen
+import dev.mago.android.diagnostics.DiagnosticsUiModel
 import dev.mago.android.installation.InstallationStage
 import dev.mago.android.installation.InstallationState
 import dev.mago.android.inventory.InventoryScreen
 import dev.mago.android.inventory.InventoryTab
 import dev.mago.android.inventory.InventoryUiState
-import dev.mago.android.model.DiagnosticEntry
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
 import dev.mago.android.modules.ModuleListMode
@@ -65,7 +65,7 @@ fun MagoApp(
     modulesState: ModulesUiState,
     reportsState: ReportsUiState,
     terminalState: TerminalUiState,
-    diagnostics: List<DiagnosticEntry>,
+    diagnosticsUiModel: DiagnosticsUiModel,
     themeMode: MagoThemeMode,
     fontScale: Float,
     reducedMotion: Boolean,
@@ -99,6 +99,7 @@ fun MagoApp(
     onReportPreviewTabSelected: (ReportPreviewTab) -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
+    onCopyDiagnosticsSummary: (String) -> Boolean,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -143,7 +144,7 @@ fun MagoApp(
                     modulesState = modulesState,
                     reportsState = reportsState,
                     terminalState = terminalState,
-                    diagnostics = diagnostics,
+                    diagnosticsUiModel = diagnosticsUiModel,
                     onRetry = onRetry,
                     onOpenTermux = onOpenTermux,
                     onRequestTermuxPermission = onRequestTermuxPermission,
@@ -175,6 +176,7 @@ fun MagoApp(
                     onReportPreviewTabSelected = onReportPreviewTabSelected,
                     onReportFormatSelected = onReportFormatSelected,
                     onReportExport = onReportExport,
+                    onCopyDiagnosticsSummary = onCopyDiagnosticsSummary,
                     onTerminalStart = onTerminalStart,
                     onTerminalStop = onTerminalStop,
                     onTerminalInputChanged = onTerminalInputChanged,
@@ -232,7 +234,7 @@ private fun AppNavHost(
     modulesState: ModulesUiState,
     reportsState: ReportsUiState,
     terminalState: TerminalUiState,
-    diagnostics: List<DiagnosticEntry>,
+    diagnosticsUiModel: DiagnosticsUiModel,
     onRetry: () -> Unit,
     onOpenTermux: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
@@ -264,6 +266,7 @@ private fun AppNavHost(
     onReportPreviewTabSelected: (ReportPreviewTab) -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
+    onCopyDiagnosticsSummary: (String) -> Boolean,
     onTerminalStart: () -> Unit,
     onTerminalStop: () -> Unit,
     onTerminalInputChanged: (String) -> Unit,
@@ -346,7 +349,10 @@ private fun AppNavHost(
             )
         }
         composable(MagoDestination.Diagnostics.route) {
-            DiagnosticsScreen(diagnostics)
+            DiagnosticsScreen(
+                uiModel = diagnosticsUiModel,
+                onCopySummary = onCopyDiagnosticsSummary,
+            )
         }
     }
 }

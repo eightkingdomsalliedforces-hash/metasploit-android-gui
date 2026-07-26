@@ -45,7 +45,7 @@ MAGO 不提供批量執行、自動後滲透、自主掃描、憑證擷取捷徑
 - 匯出排除 RPC 密碼、Token、Credentials、Keystore、Console、完整路徑、資產自由文字、`extraFields`、原始結果與原始錯誤
 - 報告使用 Android Storage Access Framework，不要求廣泛儲存權限
 
-### App 安全與顯示
+### App 安全、顯示與診斷
 
 - 可選的 App 鎖，使用 Android 系統生物辨識或裝置 PIN／圖形
 - 啟用、停用及解鎖均由系統驗證，不保存生物特徵或裝置憑證
@@ -54,6 +54,10 @@ MAGO 不提供批量執行、自動後滲透、自主掃描、憑證擷取捷徑
 - 100%、130%、160% 與 200% 字體級距
 - 可持久化的減少動畫設定
 - 手機與平板自適應導覽及大字體捲動處理
+- 診斷頁顯示 MAGO 版本、Bridge bundle 版本／SHA、Android API、CPU ABI、Metasploit 版本及安全安裝狀態
+- 使用者可手動複製固定格式、嚴格白名單的已遮罩診斷摘要
+- 診斷摘要不包含品牌、型號、裝置識別碼、帳密、Token、完整路徑、原始錯誤或未知 Bridge 欄位
+- MAGO 不會自動上傳、背景傳送或持久化診斷摘要
 
 ## Termux 安裝與首次授權
 
@@ -124,6 +128,7 @@ Debug APK 用於開發與真機驗收，不是正式商店發布版本。
 gradle --no-daemon --stacktrace \
   :app:assembleDebug \
   :app:lintDebug \
+  :app:testDebugUnitTest \
   :domain:installation:testDebugUnitTest \
   :core:security:testDebugUnitTest \
   :core:termux:testDebugUnitTest \
@@ -133,7 +138,8 @@ gradle --no-daemon --stacktrace \
   :feature:modules:testDebugUnitTest \
   :feature:dashboard:testDebugUnitTest \
   :feature:inventory:testDebugUnitTest \
-  :feature:reports:testDebugUnitTest
+  :feature:reports:testDebugUnitTest \
+  :feature:diagnostics:testDebugUnitTest
 
 python3 -m pip install --disable-pip-version-check check-jsonschema
 bash termux-bridge/tests/contract_test.sh
@@ -168,3 +174,10 @@ git diff --exit-code -- \
 - [ ] 預覽重新整理失敗時保留上一份完整快照
 - [ ] JSON、CSV、HTML、ZIP 四種 SAF 儲存及取消流程
 - [ ] 匯出文件中不存在原始預覽專用欄位與測試秘密值
+- [ ] 診斷頁顯示 App、Bridge、Android／ABI、Metasploit 與安全安裝狀態
+- [ ] Bridge SHA 在畫面顯示短碼，複製摘要包含完整 SHA
+- [ ] 敏感、未知與 deny-list Bridge 欄位不顯示原值且不進入摘要
+- [ ] RPC host 只顯示 localhost 是／否，不顯示原始位址
+- [ ] 剪貼簿成功時顯示「已複製診斷摘要」
+- [ ] 模擬剪貼簿失敗時只顯示「無法複製診斷摘要」
+- [ ] 複製內容不含品牌、型號、裝置識別碼、帳密、Token、完整路徑或原始錯誤

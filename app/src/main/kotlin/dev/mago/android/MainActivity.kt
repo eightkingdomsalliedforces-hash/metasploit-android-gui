@@ -1,6 +1,9 @@
 package dev.mago.android
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,6 +23,8 @@ import dev.mago.android.common.AppResult
 import dev.mago.android.dashboard.DashboardViewModel
 import dev.mago.android.datastore.FontScale
 import dev.mago.android.datastore.ThemeMode as StoredThemeMode
+import dev.mago.android.diagnostics.DiagnosticsPresentationInput
+import dev.mago.android.diagnostics.DiagnosticsPresenter
 import dev.mago.android.inventory.InventoryViewModel
 import dev.mago.android.modules.ModulesViewModel
 import dev.mago.android.onboarding.OnboardingViewModel
@@ -27,6 +32,7 @@ import dev.mago.android.reporting.ReportDocument
 import dev.mago.android.reporting.ReportFormat
 import dev.mago.android.reports.ReportsViewModel
 import dev.mago.android.terminal.TerminalViewModel
+import dev.mago.android.termux.BridgeBundleMetadata
 import dev.mago.android.ui.theme.MagoThemeMode
 import kotlinx.coroutines.launch
 
@@ -221,9 +227,29 @@ class MainActivity : FragmentActivity() {
         val modulesState by modulesViewModel.uiState.collectAsStateWithLifecycle()
         val reportsState by reportsViewModel.uiState.collectAsStateWithLifecycle()
         val terminalState by terminalViewModel.uiState.collectAsStateWithLifecycle()
+        val metasploitVersion by container.bootstrapCoordinator.metasploitVersion
+            .collectAsStateWithLifecycle()
         val diagnostics by container.bootstrapCoordinator.diagnostics.collectAsStateWithLifecycle()
         val preferences = preferencesState.preferences
         val themeMode = preferences.themeMode.toUiThemeMode()
+        val diagnosticsUiModel = DiagnosticsPresenter.present(
+            DiagnosticsPresentationInput(
+                appVersionName = BuildConfig.VERSION_NAME,
+                appVersionCode = BuildConfig.VERSION_CODE.toLong(),
+                minimumApi = 31,
+                bridgeVersion = BridgeBundleMetadata.VERSION,
+                bridgeSha256 = BridgeBundleMetadata.SHA256,
+                androidRelease = Build.VERSION.RELEASE,
+                apiLevel = Build.VERSION.SDK_INT,
+                primaryAbi = Build.SUPPORTED_ABIS.firstOrNull(),
+                metasploitVersion = metasploitVersion?.frameworkVersion,
+                currentStage = installationState.stage.name,
+                lastSuccessfulStage = installationState.lastSuccessfulStage?.name,
+                failureKind = installationState.failureKind?.name,
+                errorCode = installationState.lastError?.errorCode,
+                diagnosticEntries = diagnostics,
+            ),
+        )
 
         LaunchedEffect(reportsState.pendingDocument?.id) {
             val document = reportsState.pendingDocument ?: return@LaunchedEffect
@@ -271,7 +297,7 @@ class MainActivity : FragmentActivity() {
             modulesState = modulesState,
             reportsState = reportsState,
             terminalState = terminalState,
-            diagnostics = diagnostics,
+            diagnosticsUiModel = diagnosticsUiModel,
             themeMode = themeMode,
             fontScale = preferences.fontScale.multiplier,
             reducedMotion = preferences.reducedMotion,
@@ -307,6 +333,15 @@ class MainActivity : FragmentActivity() {
             onReportPreviewTabSelected = reportsViewModel::selectPreviewTab,
             onReportFormatSelected = reportsViewModel::selectFormat,
             onReportExport = reportsViewModel::requestExport,
+            onCopyDiagnosticsSummary = { summary ->
+                tryWriteDiagnosticsClipboard {
+                    val clipboard = getSystemService(ClipboardManager::class.java)
+                        ?: error("Clipboard unavailable")
+                    clipboard.setPrimaryClip(
+                        ClipData.newPlainText("MAGO diagnostics", summary),
+                    )
+                }
+            },
             onTerminalStart = terminalViewModel::start,
             onTerminalStop = terminalViewModel::stop,
             onTerminalInputChanged = terminalViewModel::setInput,

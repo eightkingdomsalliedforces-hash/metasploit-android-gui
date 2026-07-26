@@ -77,6 +77,7 @@ jobs:
           set -o pipefail
           mkdir -p ci-logs
           gradle --no-daemon --stacktrace :app:assembleDebug :app:lintDebug \
+            :app:testDebugUnitTest \
             :domain:installation:testDebugUnitTest \
             :core:security:testDebugUnitTest \
             :core:termux:testDebugUnitTest \
@@ -86,7 +87,8 @@ jobs:
             :feature:modules:testDebugUnitTest \
             :feature:dashboard:testDebugUnitTest \
             :feature:inventory:testDebugUnitTest \
-            :feature:reports:testDebugUnitTest 2>&1 | tee ci-logs/gradle.log
+            :feature:reports:testDebugUnitTest \
+            :feature:diagnostics:testDebugUnitTest 2>&1 | tee ci-logs/gradle.log
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
