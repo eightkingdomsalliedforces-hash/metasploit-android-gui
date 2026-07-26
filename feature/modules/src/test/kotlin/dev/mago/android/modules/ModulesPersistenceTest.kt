@@ -53,9 +53,10 @@ class ModulesPersistenceTest {
     }
 
     @Test
-    fun `confirmed execution stores only redacted option summary`() = runTest {
+    fun `confirmed execution stores redacted READY before RPC then RUNNING`() = runTest {
         val store = FakeLocalStore()
-        val viewModel = ModulesViewModel(FakeRepository(), store)
+        val repository = FakeRepository()
+        val viewModel = ModulesViewModel(repository, store)
         val summary = MetasploitModuleSummary(MetasploitModuleType.EXPLOIT, "windows/example")
         viewModel.selectModule(summary)
         viewModel.setOption("RHOSTS", "192.0.2.10")
@@ -65,16 +66,57 @@ class ModulesPersistenceTest {
         viewModel.setAuthorizationConfirmed(true)
         viewModel.confirmRun()
 
-        val record = store.executions.single()
-        assertThat(record.redactedOptions["PASSWORD"]).isEqualTo("••••••••")
-        assertThat(record.redactedOptions.values).doesNotContain("plain-secret")
-        assertThat(record.uuid).isEqualTo("run-uuid")
-        assertThat(record.status).isEqualTo(MetasploitModuleRunStatus.RUNNING)
+        assertThat(store.executions.map { it.status })
+            .containsExactly(MetasploitModuleRunStatus.READY, MetasploitModuleRunStatus.RUNNING)
+            .inOrder()
+        store.executions.forEach { record ->
+            assertThat(record.redactedOptions["PASSWORD"]).isEqualTo("••••••••")
+            assertThat(record.redactedOptions.values).doesNotContain("plain-secret")
+        }
+        assertThat(store.executions.last().uuid).isEqualTo("run-uuid")
+        assertThat(repository.executeRequests).hasSize(1)
+    }
+
+    @Test
+    fun `audit write failure blocks repository execution`() = runTest {
+        val store = FakeLocalStore(failRecordExecution = true)
+        val repository = FakeRepository()
+        val viewModel = ModulesViewModel(repository, store)
+        val summary = MetasploitModuleSummary(MetasploitModuleType.EXPLOIT, "windows/example")
+        viewModel.selectModule(summary)
+        viewModel.setOption("RHOSTS", "192.0.2.10")
+
+        viewModel.requestExecute()
+        viewModel.setAuthorizationConfirmed(true)
+        viewModel.confirmRun()
+
+        assertThat(repository.executeRequests).isEmpty()
+        assertThat(store.executions).isEmpty()
+        assertThat(viewModel.uiState.value.runErrorMessage).contains("稽核")
+    }
+
+    @Test
+    fun `offline cached module cannot request execution`() = runTest {
+        val cached = listOf(MetasploitModuleSummary(MetasploitModuleType.EXPLOIT, "windows/example"))
+        val store = FakeLocalStore(cachedModules = cached)
+        val repository = FakeRepository(listFailure = true)
+        val viewModel = ModulesViewModel(repository, store)
+        viewModel.selectType(MetasploitModuleType.EXPLOIT)
+        viewModel.selectModule(cached.single())
+        viewModel.setOption("RHOSTS", "192.0.2.10")
+
+        viewModel.requestExecute()
+
+        assertThat(viewModel.uiState.value.confirmation).isNull()
+        assertThat(viewModel.uiState.value.runErrorMessage).contains("離線")
+        assertThat(repository.executeRequests).isEmpty()
     }
 
     private class FakeRepository(
         private val listFailure: Boolean = false,
     ) : MetasploitModuleRepository {
+        val executeRequests = mutableListOf<MetasploitModuleRequest>()
+
         override suspend fun list(type: MetasploitModuleType): AppResult<List<MetasploitModuleSummary>> =
             if (listFailure) {
                 AppResult.Failure(AppError("OFFLINE", "RPC 離線", retryable = true))
@@ -127,8 +169,10 @@ class ModulesPersistenceTest {
         override suspend fun check(request: MetasploitModuleRequest) =
             AppResult.Success(MetasploitModuleLaunch(jobId = 7, uuid = "run-uuid"))
 
-        override suspend fun execute(request: MetasploitModuleRequest) =
-            AppResult.Success(MetasploitModuleLaunch(jobId = 8, uuid = "run-uuid"))
+        override suspend fun execute(request: MetasploitModuleRequest): AppResult<MetasploitModuleLaunch> {
+            executeRequests += request
+            return AppResult.Success(MetasploitModuleLaunch(jobId = 8, uuid = "run-uuid"))
+        }
 
         override suspend fun result(uuid: String) =
             AppResult.Success(MetasploitModuleRunResult(status = MetasploitModuleRunStatus.COMPLETED))
@@ -136,6 +180,7 @@ class ModulesPersistenceTest {
 
     private class FakeLocalStore(
         private val cachedModules: List<MetasploitModuleSummary> = emptyList(),
+        private val failRecordExecution: Boolean = false,
     ) : ModuleLocalStore {
         val executions = mutableListOf<ModuleExecutionRecord>()
 
@@ -147,6 +192,7 @@ class ModulesPersistenceTest {
         override suspend fun favorites() = emptySet<String>()
         override suspend fun setFavorite(module: MetasploitModuleSummary, favorite: Boolean) = Unit
         override suspend fun recordExecution(record: ModuleExecutionRecord) {
+            if (failRecordExecution) error("database unavailable")
             executions += record
         }
         override suspend fun updateExecution(
