@@ -22,41 +22,22 @@ jobs:
           ref: feature/phase4-operations
           fetch-depth: 0
 
-      - name: Diagnose, verify, and apply payload
+      - name: Verify and commit source payload
         shell: bash
         run: |
-          set -uo pipefail
-          mkdir -p ci-logs
-          exec > >(tee ci-logs/phase4-payload.log) 2>&1
-
+          set -euo pipefail
           payload_b64=/tmp/phase4-operations.b64
           payload_archive=/tmp/phase4-operations.tar.xz
           expected_length=16352
           expected_sha=46a021032bd9d7e350b156919e6696023ed7c12a5474661afa27e64a45c1abc8
 
-          echo '=== Payload parts ==='
-          ls -l phase4-operations-payload/part-* || exit 20
-          wc -c phase4-operations-payload/part-*
+          cat phase4-operations-payload/part-* > "$payload_b64"
+          test "$(wc -c < "$payload_b64")" -eq "$expected_length"
+          base64 --decode "$payload_b64" > "$payload_archive"
+          test "$(sha256sum "$payload_archive" | awk '{print $1}')" = "$expected_sha"
+          xz --test "$payload_archive"
+          tar -xJf "$payload_archive" -C .
 
-          cat phase4-operations-payload/part-* > "$payload_b64" || exit 21
-          actual_length="$(wc -c < "$payload_b64")"
-          echo "combined_length=$actual_length expected_length=$expected_length"
-          test "$actual_length" -eq "$expected_length" || exit 22
-
-          echo '=== Base64 decode ==='
-          base64 --decode "$payload_b64" > "$payload_archive" || exit 23
-          ls -l "$payload_archive"
-
-          actual_sha="$(sha256sum "$payload_archive" | awk '{print $1}')"
-          echo "archive_sha=$actual_sha expected_sha=$expected_sha"
-          test "$actual_sha" = "$expected_sha" || exit 24
-
-          echo '=== XZ and TAR structure ==='
-          xz --test "$payload_archive" || exit 25
-          tar -tJf "$payload_archive" | tee ci-logs/phase4-payload-paths.log || exit 26
-          tar -xJf "$payload_archive" -C . || exit 27
-
-          echo '=== Required extracted files ==='
           required=(
             core/model/src/main/kotlin/dev/mago/android/model/MetasploitOperation.kt
             core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt
@@ -64,25 +45,17 @@ jobs:
             feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt
           )
           for path in "${required[@]}"; do
-            test -s "$path" || { echo "missing=$path"; exit 28; }
-            echo "present=$path"
+            test -s "$path"
           done
 
-          echo '=== Commit verified source ==='
-          git rm -r phase4-operations-payload .github/workflows/apply-phase4-operations.yml || exit 29
-          git add .github/workflows/android.yml app core domain feature/dashboard || exit 30
-          git status --short
+          # GitHub Actions tokens cannot modify workflow files. Restore the
+          # repository workflow and leave this one-time workflow for the
+          # connector to remove after the source commit succeeds.
+          git restore --source=HEAD -- .github/workflows/android.yml
+          git rm -r phase4-operations-payload
+          git add app core domain feature/dashboard
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat: add read-only jobs and sessions dashboard' || exit 31
-          git push origin HEAD:feature/phase4-operations || exit 32
-
-      - name: Upload payload diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase4-payload-diagnostics-${{ github.run_number }}
-          path: ci-logs/
-          if-no-files-found: warn
-          retention-days: 7
+          git commit -m 'feat: add read-only jobs and sessions dashboard'
+          git push origin HEAD:feature/phase4-operations
