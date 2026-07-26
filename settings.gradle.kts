@@ -26,6 +26,7 @@ include(
     ":core:termux",
     ":core:database",
     ":core:datastore",
+    ":core:reporting",
     ":domain:installation",
     ":domain:metasploit",
     ":feature:onboarding",
@@ -33,5 +34,6 @@ include(
     ":feature:diagnostics",
     ":feature:inventory",
     ":feature:modules",
+    ":feature:reports",
     ":feature:terminal",
 )
