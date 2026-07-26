@@ -32,5 +32,6 @@ include(
     ":feature:dashboard",
     ":feature:diagnostics",
     ":feature:modules",
+    ":feature:operations",
     ":feature:terminal",
 )
