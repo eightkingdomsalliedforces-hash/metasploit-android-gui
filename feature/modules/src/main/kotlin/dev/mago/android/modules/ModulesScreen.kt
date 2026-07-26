@@ -53,6 +53,7 @@ fun ModulesScreen(
     onModuleSelected: (MetasploitModuleSummary) -> Unit,
     onBackToList: () -> Unit,
     onRetry: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onOptionChanged: (String, String) -> Unit,
     onRequestCheck: () -> Unit,
     onRequestExecute: () -> Unit,
@@ -122,6 +123,7 @@ fun ModulesScreen(
             ModuleDetail(
                 state = state,
                 onBack = onBackToList,
+                onToggleFavorite = onToggleFavorite,
                 onOptionChanged = onOptionChanged,
                 onRequestCheck = onRequestCheck,
                 onRequestExecute = onRequestExecute,
@@ -146,12 +148,13 @@ fun ModulesScreen(
                             .padding(24.dp),
                     ) {
                         Text("選擇模組以查看詳細資料", style = MaterialTheme.typography.titleLarge)
-                        Text("模組執行前會顯示參數摘要並要求明確確認。")
+                        Text("模組執行前會顯示參數摘要、寫入稽核並要求明確確認。")
                     }
                 } else {
                     ModuleDetail(
                         state = state,
                         onBack = null,
+                        onToggleFavorite = onToggleFavorite,
                         onOptionChanged = onOptionChanged,
                         onRequestCheck = onRequestCheck,
                         onRequestExecute = onRequestExecute,
@@ -184,6 +187,14 @@ private fun ModuleList(
 ) {
     Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("模組", style = MaterialTheme.typography.headlineSmall)
+        if (state.offlineCatalog) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("離線快取", style = MaterialTheme.typography.titleMedium)
+                    Text("目前顯示本機快取；Check、Execute 與結果查詢已停用。")
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -194,6 +205,21 @@ private fun ModuleList(
                     onClick = { onTypeSelected(type) },
                     label = { Text(type.displayName) },
                 )
+            }
+        }
+        if (state.recent.isNotEmpty() && state.query.isBlank()) {
+            Text("最近使用", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.recent.take(10).forEach { module ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { onModuleSelected(module) },
+                        label = { Text(module.name) },
+                    )
+                }
             }
         }
         OutlinedTextField(
@@ -220,7 +246,11 @@ private fun ModuleList(
                         .clickable { onModuleSelected(module) },
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(module.name, style = MaterialTheme.typography.bodyLarge)
+                        val key = "${module.type.rpcName}/${module.name}"
+                        Text(
+                            (if (key in state.favorites) "★ " else "") + module.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                         Text(module.type.displayName, style = MaterialTheme.typography.labelMedium)
                     }
                 }
@@ -233,6 +263,7 @@ private fun ModuleList(
 private fun ModuleDetail(
     state: ModulesUiState,
     onBack: (() -> Unit)?,
+    onToggleFavorite: () -> Unit,
     onOptionChanged: (String, String) -> Unit,
     onRequestCheck: () -> Unit,
     onRequestExecute: () -> Unit,
@@ -251,6 +282,12 @@ private fun ModuleDetail(
         }
         Text(info.displayName, style = MaterialTheme.typography.headlineSmall)
         Text(info.type.rpcName + "/" + info.name, style = MaterialTheme.typography.labelLarge)
+        OutlinedButton(onClick = onToggleFavorite) {
+            Text(if (state.selectedIsFavorite) "取消收藏" else "加入收藏")
+        }
+        if (state.offlineCatalog) {
+            Text("離線詳細資料可能不完整，且不能執行模組。", color = MaterialTheme.colorScheme.error)
+        }
         info.rank?.let { Text("Rank：$it") }
         Text(info.description.ifBlank { "沒有描述" })
         if (info.platforms.isNotEmpty()) Text("平台：${info.platforms.joinToString()}")
@@ -307,13 +344,41 @@ private fun ModuleDetail(
                     Text("模組已送出", style = MaterialTheme.typography.titleMedium)
                     Text("UUID：${launch.uuid}")
                     launch.jobId?.let { Text("Job ID：$it") }
-                    OutlinedButton(onClick = onRefreshResult, enabled = !state.runLoading) {
+                    OutlinedButton(
+                        onClick = onRefreshResult,
+                        enabled = !state.runLoading && !state.offlineCatalog,
+                    ) {
                         Text("重新整理結果")
                     }
                     state.runResult?.let { result ->
                         Text("狀態：${result.status.name}")
                         result.error?.let { Text("錯誤：$it", color = MaterialTheme.colorScheme.error) }
                         result.result?.let { Text("結果：${it.displayText()}") }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider()
+        Text("執行紀錄", style = MaterialTheme.typography.titleLarge)
+        if (state.selectedHistory.isEmpty()) {
+            Text("尚無執行紀錄")
+        } else {
+            state.selectedHistory.take(20).forEach { record ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("${record.action.name} · ${record.status.name}")
+                        Text("Correlation：${record.correlationId}")
+                        record.uuid?.let { Text("UUID：$it") }
+                        record.jobId?.let { Text("Job ID：$it") }
+                        if (record.redactedOptions.isNotEmpty()) {
+                            Text(
+                                record.redactedOptions.entries.joinToString(" · ") { (key, value) ->
+                                    "$key=$value"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                 }
             }
