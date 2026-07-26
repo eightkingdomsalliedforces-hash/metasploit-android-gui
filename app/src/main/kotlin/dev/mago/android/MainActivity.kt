@@ -60,10 +60,8 @@ class MainActivity : ComponentActivity() {
                 onModuleOptionChanged = modulesViewModel::setOption,
                 onModuleRequestCheck = modulesViewModel::requestCheck,
                 onModuleRequestExecute = modulesViewModel::requestExecute,
-                onModuleConfirmRun = {
-                    modulesViewModel.setAuthorizationConfirmed(true)
-                    modulesViewModel.confirmRun()
-                },
+                onModuleAuthorizationChanged = modulesViewModel::setAuthorizationConfirmed,
+                onModuleConfirmRun = modulesViewModel::confirmRun,
                 onModuleCancelRun = modulesViewModel::cancelRun,
                 onModuleRefreshResult = modulesViewModel::refreshResult,
                 onTerminalStart = terminalViewModel::start,
