@@ -32,6 +32,7 @@ data class ModulesUiState(
     val validationErrors: Map<String, String> = emptyMap(),
     val compatiblePayloads: List<String> = emptyList(),
     val confirmation: ModuleRunConfirmation? = null,
+    val authorizationConfirmed: Boolean = false,
     val launch: MetasploitModuleLaunch? = null,
     val runResult: MetasploitModuleRunResult? = null,
     val runLoading: Boolean = false,
@@ -54,7 +55,6 @@ data class ModulesUiState(
             MetasploitModuleType.EXPLOIT,
             MetasploitModuleType.AUXILIARY,
             MetasploitModuleType.POST,
-            MetasploitModuleType.PAYLOAD,
             MetasploitModuleType.EVASION,
         )
 }
@@ -83,6 +83,7 @@ class ModulesViewModel(
                     errorMessage = null,
                     runErrorMessage = null,
                     confirmation = null,
+                    authorizationConfirmed = false,
                     launch = null,
                     runResult = null,
                 )
@@ -128,6 +129,7 @@ class ModulesViewModel(
                 optionValues = current.optionValues + (name to value),
                 validationErrors = current.validationErrors - name,
                 runErrorMessage = null,
+                authorizationConfirmed = false,
             )
         }
     }
@@ -140,15 +142,34 @@ class ModulesViewModel(
         requestRun(MetasploitModuleRunAction.EXECUTE)
     }
 
-    fun cancelRun() {
-        _uiState.update { it.copy(confirmation = null) }
+    fun setAuthorizationConfirmed(confirmed: Boolean) {
+        _uiState.update { current ->
+            if (current.confirmation == null) current.copy(authorizationConfirmed = false)
+            else current.copy(authorizationConfirmed = confirmed, runErrorMessage = null)
+        }
     }
 
-    fun confirmRun() {
-        val confirmation = _uiState.value.confirmation ?: return
+    fun cancelRun() {
         _uiState.update {
             it.copy(
                 confirmation = null,
+                authorizationConfirmed = false,
+                runErrorMessage = null,
+            )
+        }
+    }
+
+    fun confirmRun() {
+        val current = _uiState.value
+        val confirmation = current.confirmation ?: return
+        if (!current.authorizationConfirmed) {
+            _uiState.update { it.copy(runErrorMessage = "請先確認僅在授權環境執行") }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                confirmation = null,
+                authorizationConfirmed = false,
                 runLoading = true,
                 runErrorMessage = null,
                 launch = null,
@@ -174,6 +195,7 @@ class ModulesViewModel(
 
     fun refreshResult() {
         val uuid = _uiState.value.launch?.uuid ?: return
+        if (_uiState.value.runLoading) return
         _uiState.update { it.copy(runLoading = true, runErrorMessage = null) }
         viewModelScope.launch {
             when (val result = repository.result(uuid)) {
@@ -195,6 +217,7 @@ class ModulesViewModel(
                 validationErrors = emptyMap(),
                 compatiblePayloads = emptyList(),
                 confirmation = null,
+                authorizationConfirmed = false,
                 launch = null,
                 runResult = null,
                 runErrorMessage = null,
@@ -221,7 +244,11 @@ class ModulesViewModel(
         val validation = validator.validate(selected.options, current.optionValues)
         if (!validation.valid) {
             _uiState.update {
-                it.copy(validationErrors = validation.errors, runErrorMessage = "請先修正參數")
+                it.copy(
+                    validationErrors = validation.errors,
+                    runErrorMessage = "請先修正參數",
+                    authorizationConfirmed = false,
+                )
             }
             return
         }
@@ -229,11 +256,13 @@ class ModulesViewModel(
             type = selected.type,
             name = selected.name,
             options = validation.normalized,
+            userConfirmed = false,
         )
         _uiState.update {
             it.copy(
                 validationErrors = emptyMap(),
                 runErrorMessage = null,
+                authorizationConfirmed = false,
                 confirmation = ModuleRunConfirmation(
                     action = action,
                     request = request,
