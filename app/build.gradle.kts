@@ -18,6 +18,7 @@ dependencies {
     implementation(project(":feature:diagnostics"))
     implementation(project(":feature:modules"))
     implementation(project(":feature:terminal"))
+    implementation(project(":feature:operations"))
 
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
