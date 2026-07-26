@@ -121,7 +121,9 @@ ReportsViewModel
 
 ### 7.1 `ReportPreviewSnapshot`
 
-建議放在 `feature:reports` 或一個僅供報告功能使用的 model 檔案：
+固定建立於：
+
+`feature/reports/src/main/kotlin/dev/mago/android/reports/ReportPreviewModels.kt`
 
 ```kotlin
 data class ReportPreviewSnapshot(
@@ -232,7 +234,7 @@ fun ReportPreviewSnapshot.toSafeReportSnapshot(): ReportSnapshot
 - 使用 `LazyColumn`，不得用一般 `Column` 一次組合所有記錄。
 - 每筆為可展開 Card。
 - 摘要顯示識別欄位；展開後顯示全部已知欄位與 `extraFields`。
-- 同一時間可允許一筆或多筆展開；實作計畫優先選擇單筆展開以降低狀態複雜度。
+- 同一時間只允許一筆 Card 展開；點擊另一筆時關閉原項目並展開新項目。
 
 ### 9.4 平板
 
@@ -310,15 +312,17 @@ fun ReportPreviewSnapshot.toSafeReportSnapshot(): ReportSnapshot
 
 ### 11.1 敏感鍵名遮罩
 
-對 Map／`extraFields` 遞迴檢查鍵名。鍵名正規化為小寫並移除 `_`、`-`、空白後，符合下列語意者把整個值顯示為 `[REDACTED]`：
+對 Map／`extraFields` 遞迴檢查鍵名。鍵名正規化為小寫並移除 `_`、`-`、空白後，只要包含下列任一片段，就把整個值顯示為 `[REDACTED]`：
 
-- password／passwd／passphrase
-- token／accessToken／refreshToken
-- credential／credentials
-- secret／clientSecret
-- apiKey
-- privateKey
-- auth／authorization（值可能是認證資料時）
+- `password`、`passwd`、`passphrase`
+- `token`、`accesstoken`、`refreshtoken`
+- `credential`、`credentials`
+- `secret`、`clientsecret`
+- `apikey`
+- `privatekey`
+- `auth`、`authorization`
+
+`auth` 與 `authorization` 一律遮罩，不嘗試依內容猜測是否敏感。
 
 此拒絕清單只降低意外外洩風險，不能宣稱可識別所有秘密；因此 UI 仍必須保留原始資料警告。
 
@@ -396,8 +400,8 @@ Phase 7 不重建 CI 架構。只做必要整備：
 
 1. 保持 PR、push to main、workflow_dispatch 觸發。
 2. 保持 Debug APK artifact 上傳失敗即 workflow 失敗。
-3. 可新增 APK SHA-256 文字檔並與 APK 放在同一 artifact；若實作增加不必要複雜度可省略。
-4. README 說明從 Actions 頁下載 artifact，並說明 artifact 是 Debug build、不是正式簽署版本。
+3. 產生 `app-debug.apk.sha256`，內容為 APK 的 SHA-256，與 APK 放在同一 artifact。
+4. README 說明從 Actions 頁下載 artifact、核對 SHA-256，並說明 artifact 是 Debug build、不是正式簽署版本。
 5. README 不提供繞過 Android 安裝警告或安全限制的方式。
 
 ## 15. 文件同步
@@ -412,7 +416,7 @@ README 改寫為目前主線狀態，至少包含：
 - 功能導覽
 - 報告預覽與安全匯出差異
 - GitHub Actions 驗證命令
-- Debug APK artifact 下載步驟
+- Debug APK artifact 下載及 SHA-256 驗證步驟
 - 已知限制
 - 不支援／不計畫提供的高風險自動化
 
@@ -494,7 +498,7 @@ README 改寫為目前主線狀態，至少包含：
 
 ### 18.5 完整 CI
 
-沿用現有 workflow，將新增的 `feature:reports`／`core:reporting` 測試納入既有 Gradle 命令。CI 成功後必須存在 Debug APK artifact。
+沿用現有 workflow，將新增的 `feature:reports`／`core:reporting` 測試納入既有 Gradle 命令。CI 成功後必須存在包含 APK 與 SHA-256 檔案的 Debug artifact。
 
 ## 19. 實作切片
 
@@ -506,13 +510,13 @@ README 改寫為目前主線狀態，至少包含：
    - Preview → Safe Snapshot
    - 安全及狀態測試
 2. **7B：完整自適應預覽 UI**
-   - 手機展開卡
+   - 手機單筆展開卡
    - 平板雙欄
    - `RpcValue` renderer 與防護
 3. **7C：文件、診斷與 Debug APK 說明**
    - README
    - 版本資訊
-   - 視需要加入 APK checksum
+   - APK SHA-256 artifact
 4. **7D：舊 PR 整理**
    - 留下取代說明
    - 關閉已分歧且不可直接合併的舊 PR
@@ -530,10 +534,10 @@ Phase 7 完成時：
 - 匯出使用同一份快照且繼續通過秘密排除測試。
 - 重新整理失敗不破壞舊快照。
 - README 與主線功能一致。
-- 使用者能依 README 從 GitHub Actions 取得 Debug APK。
+- 使用者能依 README 從 GitHub Actions 取得 Debug APK 並核對 SHA-256。
 - Diagnostics 顯示不含秘密的版本／Bridge 資訊。
 - 舊 Phase 4 PR 不再被誤認為可直接合併的目前工作。
-- Android Build、Lint、Bridge contract tests、風險導向 unit tests 全部通過，CI 上傳 Debug APK。
+- Android Build、Lint、Bridge contract tests、風險導向 unit tests 全部通過，CI 上傳 Debug APK 與 SHA-256。
 
 ## 21. 安全結論
 
