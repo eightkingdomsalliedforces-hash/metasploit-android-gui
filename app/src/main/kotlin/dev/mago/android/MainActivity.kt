@@ -90,6 +90,14 @@ class MainActivity : ComponentActivity() {
                 contract = ActivityResultContracts.CreateDocument("text/csv"),
                 onResult = ::handleReportDestination,
             )
+            val htmlReportLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("text/html"),
+                onResult = ::handleReportDestination,
+            )
+            val zipReportLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("application/zip"),
+                onResult = ::handleReportDestination,
+            )
             val permissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
             ) { onboardingViewModel.retry() }
@@ -110,6 +118,8 @@ class MainActivity : ComponentActivity() {
                     when (document.format) {
                         ReportFormat.JSON -> jsonReportLauncher.launch(document.fileName)
                         ReportFormat.CSV -> csvReportLauncher.launch(document.fileName)
+                        ReportFormat.HTML -> htmlReportLauncher.launch(document.fileName)
+                        ReportFormat.ZIP -> zipReportLauncher.launch(document.fileName)
                     }
                 } catch (exception: Exception) {
                     pendingReport = null

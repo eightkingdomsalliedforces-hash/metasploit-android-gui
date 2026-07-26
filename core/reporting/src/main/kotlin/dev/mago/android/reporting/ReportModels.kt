@@ -13,6 +13,8 @@ enum class ReportFormat(
 ) {
     JSON("json", "application/json", "JSON"),
     CSV("csv", "text/csv", "CSV"),
+    HTML("html", "text/html", "HTML"),
+    ZIP("zip", "application/zip", "ZIP"),
 }
 
 data class ReportSnapshot(
