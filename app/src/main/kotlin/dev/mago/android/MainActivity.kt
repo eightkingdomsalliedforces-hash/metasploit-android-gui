@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
         DashboardViewModel.factory(
             coordinator = container.bootstrapCoordinator,
             operationsRepository = container.metasploitOperationsRepository,
+            termuxGateway = container.termuxGateway,
         )
     }
     private val inventoryViewModel by viewModels<InventoryViewModel> {
