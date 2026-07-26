@@ -12,6 +12,8 @@ import dev.mago.android.model.MetasploitModuleRunAction
 import dev.mago.android.model.MetasploitModuleRunResult
 import dev.mago.android.model.MetasploitModuleSummary
 import dev.mago.android.model.MetasploitModuleType
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -27,6 +29,9 @@ data class ModulesUiState(
     val type: MetasploitModuleType = MetasploitModuleType.EXPLOIT,
     val query: String = "",
     val modules: List<MetasploitModuleSummary> = emptyList(),
+    val searchResults: List<MetasploitModuleSummary> = emptyList(),
+    val searching: Boolean = false,
+    val searchErrorMessage: String? = null,
     val selected: MetasploitModuleInfo? = null,
     val optionValues: Map<String, String> = emptyMap(),
     val validationErrors: Map<String, String> = emptyMap(),
@@ -41,9 +46,7 @@ data class ModulesUiState(
     val runErrorMessage: String? = null,
 ) {
     val visibleModules: List<MetasploitModuleSummary>
-        get() = if (query.isBlank()) modules else modules.filter {
-            it.name.contains(query.trim(), ignoreCase = true)
-        }
+        get() = if (query.isBlank()) modules else searchResults
 
     val canCheck: Boolean
         get() = selected?.let {
@@ -65,14 +68,27 @@ class ModulesViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
+    private var searchJob: Job? = null
 
     fun selectType(type: MetasploitModuleType) {
-        if (type == _uiState.value.type && _uiState.value.modules.isNotEmpty()) return
-        loadType(type)
+        val current = _uiState.value
+        if (type == current.type && current.modules.isNotEmpty()) return
+        searchJob?.cancel()
+        loadType(type, current.query)
+        scheduleSearch(current.query, type)
     }
 
     fun setQuery(query: String) {
-        _uiState.update { it.copy(query = query) }
+        val type = _uiState.value.type
+        _uiState.update {
+            it.copy(
+                query = query,
+                searchResults = if (query.isBlank()) emptyList() else it.searchResults,
+                searching = false,
+                searchErrorMessage = null,
+            )
+        }
+        scheduleSearch(query, type)
     }
 
     fun selectModule(module: MetasploitModuleSummary) {
@@ -226,7 +242,44 @@ class ModulesViewModel(
     }
 
     fun retry() {
-        loadType(_uiState.value.type)
+        val current = _uiState.value
+        loadType(current.type, current.query)
+        scheduleSearch(current.query, current.type)
+    }
+
+    private fun scheduleSearch(query: String, type: MetasploitModuleType) {
+        searchJob?.cancel()
+        val normalized = query.trim()
+        if (normalized.isEmpty()) {
+            _uiState.update { it.copy(searchResults = emptyList(), searching = false, searchErrorMessage = null) }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MILLIS)
+            if (_uiState.value.query.trim() != normalized || _uiState.value.type != type) return@launch
+            _uiState.update { it.copy(searching = true, searchErrorMessage = null) }
+            val qualifiedQuery = "$normalized type:${type.rpcName}"
+            when (val result = repository.search(qualifiedQuery)) {
+                is AppResult.Failure -> _uiState.update { current ->
+                    if (current.query.trim() == normalized && current.type == type) {
+                        current.copy(searching = false, searchErrorMessage = result.error.userMessage)
+                    } else {
+                        current
+                    }
+                }
+                is AppResult.Success -> _uiState.update { current ->
+                    if (current.query.trim() == normalized && current.type == type) {
+                        current.copy(
+                            searching = false,
+                            searchResults = result.value.filter { it.type == type },
+                            searchErrorMessage = null,
+                        )
+                    } else {
+                        current
+                    }
+                }
+            }
+        }
     }
 
     private fun requestRun(action: MetasploitModuleRunAction) {
@@ -272,21 +325,45 @@ class ModulesViewModel(
         }
     }
 
-    private fun loadType(type: MetasploitModuleType) {
+    private fun loadType(type: MetasploitModuleType, query: String = _uiState.value.query) {
+        _uiState.update {
+            it.copy(
+                type = type,
+                query = query,
+                modules = emptyList(),
+                searchResults = emptyList(),
+                searching = false,
+                searchErrorMessage = null,
+                selected = null,
+                optionValues = emptyMap(),
+                validationErrors = emptyMap(),
+                compatiblePayloads = emptyList(),
+                confirmation = null,
+                authorizationConfirmed = false,
+                launch = null,
+                runResult = null,
+                loading = true,
+                errorMessage = null,
+                runErrorMessage = null,
+            )
+        }
         viewModelScope.launch {
-            _uiState.value = ModulesUiState(type = type, loading = true)
             when (val result = repository.list(type)) {
-                is AppResult.Failure -> _uiState.update {
-                    it.copy(loading = false, errorMessage = result.error.userMessage)
+                is AppResult.Failure -> _uiState.update { current ->
+                    if (current.type == type) current.copy(loading = false, errorMessage = result.error.userMessage)
+                    else current
                 }
-                is AppResult.Success -> _uiState.update {
-                    it.copy(loading = false, modules = result.value)
+                is AppResult.Success -> _uiState.update { current ->
+                    if (current.type == type) current.copy(loading = false, modules = result.value)
+                    else current
                 }
             }
         }
     }
 
     companion object {
+        private const val SEARCH_DEBOUNCE_MILLIS = 250L
+
         fun factory(repository: MetasploitModuleRepository): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
