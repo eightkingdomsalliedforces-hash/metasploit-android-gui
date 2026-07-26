@@ -1,55 +1,61 @@
 # MAGO Phase 8A Single Job and Session Stop Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` task by task. Use `superpowers:test-driven-development` for every production change and `superpowers:verification-before-completion` before completion claims.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Allow the user to stop exactly one currently listed Metasploit Job or Session after a second confirmation, then perform one atomic Jobs/Sessions verification refresh.
+**Goal:** Add fail-closed stopping of exactly one currently listed Metasploit Job or Session from the existing Dashboard, followed by one atomic verification refresh.
 
-**Architecture:** Extend the existing `RpcOperationsService` and `MetasploitOperationsRepository`. Keep confirmation, cross-operation locking, one stop call, one verification refresh, and safe feedback in `DashboardViewModel`. Compose receives typed state and callbacks only.
+**Architecture:** Extend the existing `RpcOperationsService` and `MetasploitOperationsRepository`; do not create a parallel Operations feature. `DashboardViewModel` owns confirmation, cross-operation locking, one stop call, one verification refresh, and evidence-based feedback. Compose renders typed state and invokes callbacks only.
 
-**Tech stack:** Kotlin, Android, Jetpack Compose Material 3, ViewModel/StateFlow, Kotlin coroutines test, JUnit 4, Google Truth, MessagePack RPC, GitHub Actions.
+**Tech Stack:** Kotlin, Android, Jetpack Compose Material 3, ViewModel/StateFlow, Kotlin coroutines test, JUnit 4, Google Truth, MessagePack RPC, GitHub Actions.
 
-## Non-negotiable boundaries
+## Global Constraints
 
-- Create `feature/phase8a-single-operation-stop` from `design/phase8a-single-operation-stop` in an isolated worktree.
+- Create `feature/phase8a-single-operation-stop` from `design/phase8a-single-operation-stop` in a worktree created through `superpowers:using-git-worktrees`.
 - Add only `job.stop` and `session.stop`.
-- A visible confirmation dialog and `userConfirmed = true` at the RPC service boundary are both required.
+- Every stop requires a visible second confirmation and `userConfirmed = true` at the RPC service boundary.
 - Unconfirmed, invalid-ID, missing-token, missing-target, and non-READY paths perform zero stop transport calls.
-- Each accepted confirmation produces at most one stop RPC.
+- Each accepted confirmation produces at most one stop RPC; no stop retry, connection retry, verification retry, polling, queue, or background execution.
 - Keep `OkHttpRpcTransport.retryOnConnectionFailure(false)` unchanged.
-- Do not retry the stop, verification refresh, or connection automatically.
-- Stop confirmation, active stopping, maintenance confirmation, and active maintenance must not overlap as actionable surfaces.
-- After a successful stop RPC, call `jobs()` once and `sessions()` once. Apply neither list unless both succeed.
-- A failed verification read preserves both old lists and the selected Job.
-- Do not log or persist IDs, stop targets, tokens, raw responses, technical messages, diagnostic data, or exception text.
-- Do not add Session I/O, console input, Meterpreter APIs, arbitrary RPC methods, batch stop, stop-all, polling, queues, background work, permissions, routes, modules, persistence, or signed-release changes.
-
-## Planned files
-
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/RpcMethod.kt`
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt`
-- `core/rpc/src/test/kotlin/dev/mago/android/rpc/service/RpcOperationsServiceTest.kt`
-- `domain/metasploit/src/main/kotlin/dev/mago/android/metasploit/MetasploitOperationsRepository.kt`
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImpl.kt`
-- `core/rpc/src/test/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImplTest.kt`
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/OperationStopState.kt`
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt`
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt`
-- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/OperationStopStateTest.kt`
-- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt`
-- `README.md`
+- Stop confirmation, active stopping, maintenance confirmation, and active maintenance must never overlap as actionable operation surfaces.
+- After stop RPC success, call `jobs()` once and `sessions()` once. Apply neither list unless both reads succeed.
+- A failed verification read preserves both pre-stop lists and the selected Job.
+- Do not log or persist stop targets, IDs, RPC tokens, raw responses, technical messages, diagnostic data, or exception text.
+- Keep the current Dashboard destination. Do not add a route, module, permission, database schema, notification, service, Session I/O, console input, Meterpreter API, batch stop, or stop-all.
+- Reduced-motion mode uses static progress text.
+- Do not modify signed-release behavior or secrets.
 
 ---
 
-## Task 1 — Strict Job/Session stop RPC contract
+## File Map
 
-**Modify:**
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/RpcMethod.kt`
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt`
-- `core/rpc/src/test/kotlin/dev/mago/android/rpc/service/RpcOperationsServiceTest.kt`
+- `core/rpc/src/main/kotlin/dev/mago/android/rpc/RpcMethod.kt` — fixed method constants.
+- `core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt` — service confirmation/ID gates, exact calls, strict response parsing.
+- `core/rpc/src/test/kotlin/dev/mago/android/rpc/service/RpcOperationsServiceTest.kt` — RPC contract tests.
+- `domain/metasploit/src/main/kotlin/dev/mago/android/metasploit/MetasploitOperationsRepository.kt` — domain stop methods.
+- `core/rpc/src/main/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImpl.kt` — authentication gate and forwarding.
+- `core/rpc/src/test/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImplTest.kt` — repository boundary tests.
+- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/OperationStopState.kt` — typed stop target/error and target-presence predicate.
+- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt` — atomic loading and stop state machine.
+- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt` — UI state, dialog, buttons, progress, feedback.
+- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/OperationStopStateTest.kt` — target-presence predicate tests.
+- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt` — ViewModel state-machine tests.
+- `README.md` — capability, safety, verification, smoke checks.
 
-### 1.1 RED: make the test transport observable
+---
 
-Replace the existing test transport with:
+### Task 1: Add strict stop RPC contracts
+
+**Files:**
+- Modify: `core/rpc/src/main/kotlin/dev/mago/android/rpc/RpcMethod.kt`
+- Modify: `core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt`
+- Modify: `core/rpc/src/test/kotlin/dev/mago/android/rpc/service/RpcOperationsServiceTest.kt`
+
+**Interfaces:**
+- Produces `RpcMethod.JOB_STOP` and `RpcMethod.SESSION_STOP`.
+- Produces `stopJob(token: String, jobId: String, userConfirmed: Boolean): AppResult<Unit>`.
+- Produces `stopSession(token: String, sessionId: Int, userConfirmed: Boolean): AppResult<Unit>`.
+
+- [ ] **Step 1: Replace the test transport with a call-recording transport**
 
 ```kotlin
 private class FakeTransport(
@@ -85,49 +91,64 @@ private fun assertFailureCode(result: AppResult<*>, code: String) {
 }
 ```
 
-Add RED tests proving:
+- [ ] **Step 2: Write RED tests for all pre-transport gates**
 
 ```kotlin
-@Test fun `unconfirmed job stop performs zero calls`() = runTest { /* code below */ }
-@Test fun `invalid job IDs perform zero calls`() = runTest { /* bad, -1, overflow */ }
-@Test fun `unconfirmed session stop performs zero calls`() = runTest { /* false */ }
-@Test fun `negative session ID performs zero calls`() = runTest { /* -1 */ }
+@Test
+fun `unconfirmed job stop performs zero calls`() = runTest {
+    val transport = FakeTransport(successResponse())
+    val result = RpcOperationsService(transport).stopJob("token", "4", false)
+    assertFailureCode(result, "RPC_JOB_CONFIRMATION_REQUIRED")
+    assertThat(transport.calls).isEqualTo(0)
+}
+
+@Test
+fun `invalid job IDs perform zero calls`() = runTest {
+    listOf("bad", "-1", "9223372036854775808").forEach { id ->
+        val transport = FakeTransport(successResponse())
+        val result = RpcOperationsService(transport).stopJob("token", id, true)
+        assertFailureCode(result, "RPC_JOB_ID_INVALID")
+        assertThat(transport.calls).isEqualTo(0)
+    }
+}
+
+@Test
+fun `unconfirmed and negative session stop perform zero calls`() = runTest {
+    val unconfirmed = FakeTransport(successResponse())
+    assertFailureCode(
+        RpcOperationsService(unconfirmed).stopSession("token", 7, false),
+        "RPC_SESSION_CONFIRMATION_REQUIRED",
+    )
+    assertThat(unconfirmed.calls).isEqualTo(0)
+
+    val negative = FakeTransport(successResponse())
+    assertFailureCode(
+        RpcOperationsService(negative).stopSession("token", -1, true),
+        "RPC_SESSION_ID_INVALID",
+    )
+    assertThat(negative.calls).isEqualTo(0)
+}
 ```
 
-Use these exact assertions:
-
-```kotlin
-val transport = FakeTransport(successResponse())
-val result = RpcOperationsService(transport).stopJob("token", "4", false)
-assertFailureCode(result, "RPC_JOB_CONFIRMATION_REQUIRED")
-assertThat(transport.calls).isEqualTo(0)
-```
-
-For invalid Job IDs, iterate over:
-
-```kotlin
-listOf("bad", "-1", "9223372036854775808")
-```
-
-Expected RED command:
+- [ ] **Step 3: Run RED**
 
 ```bash
 gradle --no-daemon --stacktrace :core:rpc:testDebugUnitTest \
   --tests 'dev.mago.android.rpc.service.RpcOperationsServiceTest'
 ```
 
-Expected failure: `stopJob`, `stopSession`, `JOB_STOP`, and `SESSION_STOP` do not exist.
+Expected: compilation fails because stop methods/constants do not exist.
 
-### 1.2 GREEN: add fixed methods and strict parsing
-
-Add beside the existing Job/Session methods:
+- [ ] **Step 4: Add exact RPC constants**
 
 ```kotlin
 val JOB_STOP = RpcMethod("job.stop")
 val SESSION_STOP = RpcMethod("session.stop")
 ```
 
-Add to `RpcOperationsService`:
+Place them beside the existing Job/Session methods.
+
+- [ ] **Step 5: Implement service confirmation, ID validation, exact calls, and strict result parsing**
 
 ```kotlin
 suspend fun stopJob(
@@ -149,7 +170,7 @@ suspend fun stopJob(
     ) {
         is AppResult.Failure -> response
         is AppResult.Success -> parseStopResult(
-            response.value,
+            value = response.value,
             invalidCode = "RPC_JOB_STOP_RESPONSE_INVALID",
             failedCode = "RPC_JOB_STOP_FAILED",
             failedMessage = "Metasploit 無法停止 Job",
@@ -177,7 +198,7 @@ suspend fun stopSession(
     ) {
         is AppResult.Failure -> response
         is AppResult.Success -> parseStopResult(
-            response.value,
+            value = response.value,
             invalidCode = "RPC_SESSION_STOP_RESPONSE_INVALID",
             failedCode = "RPC_SESSION_STOP_FAILED",
             failedMessage = "Metasploit 無法停止 Session",
@@ -203,23 +224,77 @@ private fun parseStopResult(
 }
 ```
 
-Add tests proving:
+- [ ] **Step 6: Add exact-call, malformed-response, and no-retry tests**
 
-- Job uses `JOB_STOP`, token `token`, one `IntValue(4)`, and accepts `SuCcEsS`.
-- Session uses `SESSION_STOP` and one `IntValue(7)`.
-- Non-map, missing `result`, and non-string `result` use `*_STOP_RESPONSE_INVALID`.
-- String `result=failed` uses `*_STOP_FAILED`.
-- A transport `AppResult.Failure` is returned as the same instance and transport call count remains one.
+```kotlin
+@Test
+fun `job stop sends one integer argument and accepts case insensitive success`() = runTest {
+    val transport = FakeTransport(
+        RpcValue.MapValue(mapOf("result" to RpcValue.StringValue("SuCcEsS"))),
+    )
+    val result = RpcOperationsService(transport).stopJob("token", "4", true)
 
-Run:
+    assertThat(result).isInstanceOf(AppResult.Success::class.java)
+    assertThat(transport.calls).isEqualTo(1)
+    assertThat(transport.lastMethod).isEqualTo(RpcMethod.JOB_STOP)
+    assertThat(transport.lastToken).isEqualTo("token")
+    assertThat(transport.lastArguments).containsExactly(RpcValue.IntValue(4))
+}
+
+@Test
+fun `session stop sends one integer argument`() = runTest {
+    val transport = FakeTransport(successResponse())
+    val result = RpcOperationsService(transport).stopSession("token", 7, true)
+
+    assertThat(result).isInstanceOf(AppResult.Success::class.java)
+    assertThat(transport.calls).isEqualTo(1)
+    assertThat(transport.lastMethod).isEqualTo(RpcMethod.SESSION_STOP)
+    assertThat(transport.lastArguments).containsExactly(RpcValue.IntValue(7))
+}
+
+@Test
+fun `malformed stop responses fail closed`() = runTest {
+    val malformed = listOf(
+        RpcValue.StringValue("success"),
+        RpcValue.MapValue(emptyMap()),
+        RpcValue.MapValue(mapOf("result" to RpcValue.IntValue(1))),
+    )
+    malformed.forEach { value ->
+        assertFailureCode(
+            RpcOperationsService(FakeTransport(value)).stopJob("token", "4", true),
+            "RPC_JOB_STOP_RESPONSE_INVALID",
+        )
+        assertFailureCode(
+            RpcOperationsService(FakeTransport(value)).stopSession("token", 7, true),
+            "RPC_SESSION_STOP_RESPONSE_INVALID",
+        )
+    }
+}
+
+@Test
+fun `non-success result and transport failure are not retried`() = runTest {
+    val failedValue = RpcValue.MapValue(mapOf("result" to RpcValue.StringValue("failed")))
+    assertFailureCode(
+        RpcOperationsService(FakeTransport(failedValue)).stopJob("token", "4", true),
+        "RPC_JOB_STOP_FAILED",
+    )
+
+    val expected = AppResult.Failure(
+        AppError(errorCode = "RPC_NETWORK_ERROR", userMessage = "無法連接本機 RPC"),
+    )
+    val transport = FakeTransport(expected)
+    val result = RpcOperationsService(transport).stopSession("token", 7, true)
+    assertThat(result).isSameInstanceAs(expected)
+    assertThat(transport.calls).isEqualTo(1)
+}
+```
+
+Add `import dev.mago.android.model.AppError`.
+
+- [ ] **Step 7: Run GREEN and commit**
 
 ```bash
 gradle --no-daemon --stacktrace :core:rpc:testDebugUnitTest
-```
-
-Commit:
-
-```bash
 git add core/rpc/src/main/kotlin/dev/mago/android/rpc/RpcMethod.kt \
   core/rpc/src/main/kotlin/dev/mago/android/rpc/service/RpcOperationsService.kt \
   core/rpc/src/test/kotlin/dev/mago/android/rpc/service/RpcOperationsServiceTest.kt
@@ -228,58 +303,103 @@ git commit -m "feat: add confirmed single operation stop RPC"
 
 ---
 
-## Task 2 — Token-gated repository methods
+### Task 2: Extend the token-gated repository
 
-**Modify:**
-- `domain/metasploit/src/main/kotlin/dev/mago/android/metasploit/MetasploitOperationsRepository.kt`
-- `core/rpc/src/main/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImpl.kt`
+**Files:**
+- Modify: `domain/metasploit/src/main/kotlin/dev/mago/android/metasploit/MetasploitOperationsRepository.kt`
+- Modify: `core/rpc/src/main/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImpl.kt`
+- Create: `core/rpc/src/test/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImplTest.kt`
 
-**Create:**
-- `core/rpc/src/test/kotlin/dev/mago/android/rpc/MetasploitOperationsRepositoryImplTest.kt`
+**Interfaces:**
+- Produces `stopJob(jobId: String, userConfirmed: Boolean): AppResult<Unit>`.
+- Produces `stopSession(sessionId: Int, userConfirmed: Boolean): AppResult<Unit>`.
 
-### 2.1 RED: repository boundary tests
-
-Create a `RecordingTransport` that returns:
-
-```kotlin
-AppResult.Success(
-    RpcValue.MapValue(mapOf("result" to RpcValue.StringValue("success"))),
-)
-```
-
-Create the exact token fake:
+- [ ] **Step 1: Create RED repository tests**
 
 ```kotlin
-private class FakeTokenStore(private val token: String?) : RpcTokenStore {
-    override fun get(): String? = token
-    override fun set(token: String) = Unit
-    override fun clear() = Unit
+package dev.mago.android.rpc
+
+import com.google.common.truth.Truth.assertThat
+import dev.mago.android.common.AppResult
+import dev.mago.android.model.rpc.RpcValue
+import dev.mago.android.security.RpcTokenStore
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+class MetasploitOperationsRepositoryImplTest {
+    @Test
+    fun `missing token blocks stop before transport`() = runTest {
+        val transport = RecordingTransport()
+        val repository = MetasploitOperationsRepositoryImpl(transport, FakeTokenStore(null))
+
+        val result = repository.stopJob("4", true)
+
+        assertThat((result as AppResult.Failure).error.errorCode)
+            .isEqualTo("RPC_NOT_AUTHENTICATED")
+        assertThat(transport.calls).isEqualTo(0)
+    }
+
+    @Test
+    fun `authenticated stops forward exactly once`() = runTest {
+        val jobTransport = RecordingTransport()
+        val jobRepository = MetasploitOperationsRepositoryImpl(jobTransport, FakeTokenStore("token"))
+        assertThat(jobRepository.stopJob("4", true)).isInstanceOf(AppResult.Success::class.java)
+        assertThat(jobTransport.calls).isEqualTo(1)
+        assertThat(jobTransport.lastMethod).isEqualTo(RpcMethod.JOB_STOP)
+        assertThat(jobTransport.lastArguments).containsExactly(RpcValue.IntValue(4))
+
+        val sessionTransport = RecordingTransport()
+        val sessionRepository = MetasploitOperationsRepositoryImpl(sessionTransport, FakeTokenStore("token"))
+        assertThat(sessionRepository.stopSession(7, true)).isInstanceOf(AppResult.Success::class.java)
+        assertThat(sessionTransport.calls).isEqualTo(1)
+        assertThat(sessionTransport.lastMethod).isEqualTo(RpcMethod.SESSION_STOP)
+        assertThat(sessionTransport.lastArguments).containsExactly(RpcValue.IntValue(7))
+    }
+
+    private class RecordingTransport : RpcTransport {
+        var calls = 0
+        var lastMethod: RpcMethod? = null
+        var lastArguments: List<RpcValue> = emptyList()
+
+        override suspend fun call(
+            method: RpcMethod,
+            token: String?,
+            arguments: List<RpcValue>,
+        ): AppResult<RpcValue> {
+            calls += 1
+            lastMethod = method
+            lastArguments = arguments
+            return AppResult.Success(
+                RpcValue.MapValue(mapOf("result" to RpcValue.StringValue("success"))),
+            )
+        }
+    }
+
+    private class FakeTokenStore(private val token: String?) : RpcTokenStore {
+        override fun get(): String? = token
+        override fun set(token: String) = Unit
+        override fun clear() = Unit
+    }
 }
 ```
 
-Add tests proving:
-
-1. `FakeTokenStore(null)` + `stopJob("4", true)` returns `RPC_NOT_AUTHENTICATED` and transport calls remain zero.
-2. Authenticated Job stop makes one `JOB_STOP` call with `IntValue(4)`.
-3. Authenticated Session stop makes one `SESSION_STOP` call with `IntValue(7)`.
-
-Run RED:
+- [ ] **Step 2: Run RED**
 
 ```bash
 gradle --no-daemon --stacktrace :core:rpc:testDebugUnitTest \
   --tests 'dev.mago.android.rpc.MetasploitOperationsRepositoryImplTest'
 ```
 
-### 2.2 GREEN: extend interface and implementation
+Expected: stop methods do not exist.
 
-Add to `MetasploitOperationsRepository`:
+- [ ] **Step 3: Extend the domain interface**
 
 ```kotlin
 suspend fun stopJob(jobId: String, userConfirmed: Boolean): AppResult<Unit>
 suspend fun stopSession(sessionId: Int, userConfirmed: Boolean): AppResult<Unit>
 ```
 
-Add to `MetasploitOperationsRepositoryImpl`:
+- [ ] **Step 4: Implement token-gated forwarding**
 
 ```kotlin
 override suspend fun stopJob(
@@ -299,7 +419,7 @@ override suspend fun stopSession(
 
 Do not add logging, persistence, retry, exception wrapping, or response transformation.
 
-Run and commit:
+- [ ] **Step 5: Run GREEN and commit**
 
 ```bash
 gradle --no-daemon --stacktrace :core:rpc:testDebugUnitTest
@@ -311,18 +431,22 @@ git commit -m "feat: expose authenticated operation stop repository"
 
 ---
 
-## Task 3 — Typed stop state and atomic Operations loading
+### Task 3: Add typed stop state and atomic Operations loading
 
-**Create:**
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/OperationStopState.kt`
-- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/OperationStopStateTest.kt`
+**Files:**
+- Create: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/OperationStopState.kt`
+- Create: `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/OperationStopStateTest.kt`
+- Modify: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt`
+- Modify: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt` (`DashboardUiState` only)
+- Modify: `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt`
 
-**Modify:**
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt`
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt` (`DashboardUiState` only)
-- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt`
+**Interfaces:**
+- Produces typed stop target/error and `existsIn` predicate.
+- Produces atomic `loadOperationsSnapshot`.
+- Produces `requestStopJob`, `requestStopSession`, and `cancelStop`.
+- Exposes confirmation/error/request/cancel through `DashboardUiState` in this task.
 
-### 3.1 Add typed state and a pure presence predicate
+- [ ] **Step 1: Create the typed model and target-presence predicate**
 
 ```kotlin
 package dev.mago.android.dashboard
@@ -360,63 +484,33 @@ internal fun OperationStopTarget.existsIn(
 }
 ```
 
-Test both matching and missing Job/Session IDs with complete `MetasploitSessionSummary` fixtures.
-
-### 3.2 Replace the Dashboard test repository with a programmable fake
-
-The fake must contain:
+- [ ] **Step 2: Create exact predicate tests**
 
 ```kotlin
-var jobsResult: AppResult<List<MetasploitJobSummary>> = AppResult.Success(defaultJobs())
-var sessionsResult: AppResult<List<MetasploitSessionSummary>> = AppResult.Success(defaultSessions())
-var jobInfoResult: AppResult<MetasploitJobInfo> = AppResult.Success(defaultJobInfo("2"))
-var stopJobResult: AppResult<Unit> = AppResult.Success(Unit)
-var stopSessionResult: AppResult<Unit> = AppResult.Success(Unit)
-var stopJobGate: CompletableDeferred<Unit>? = null
+package dev.mago.android.dashboard
 
-var jobsCalls = 0
-var sessionsCalls = 0
-val jobInfoCalls = mutableListOf<String>()
-val stopJobCalls = mutableListOf<Pair<String, Boolean>>()
-val stopSessionCalls = mutableListOf<Pair<Int, Boolean>>()
-```
+import com.google.common.truth.Truth.assertThat
+import dev.mago.android.model.MetasploitJobSummary
+import dev.mago.android.model.MetasploitSessionSummary
+import org.junit.Test
 
-Methods:
+class OperationStopStateTest {
+    @Test
+    fun `job target requires matching current ID`() {
+        val target = OperationStopTarget.Job("2", "Example Job")
+        assertThat(target.existsIn(listOf(MetasploitJobSummary("2", "Example Job")), emptyList())).isTrue()
+        assertThat(target.existsIn(emptyList(), emptyList())).isFalse()
+    }
 
-```kotlin
-override suspend fun jobs() = jobsResult.also { jobsCalls += 1 }
-override suspend fun sessions() = sessionsResult.also { sessionsCalls += 1 }
-override suspend fun jobInfo(jobId: String) = jobInfoResult.also { jobInfoCalls += jobId }
+    @Test
+    fun `session target requires matching current ID`() {
+        val target = OperationStopTarget.Session(7, "Meterpreter", "exploit/multi/handler")
+        assertThat(target.existsIn(emptyList(), listOf(session(7)))).isTrue()
+        assertThat(target.existsIn(emptyList(), listOf(session(8)))).isFalse()
+    }
 
-override suspend fun stopJob(jobId: String, userConfirmed: Boolean): AppResult<Unit> {
-    stopJobCalls += jobId to userConfirmed
-    stopJobGate?.await()
-    return stopJobResult
-}
-
-override suspend fun stopSession(sessionId: Int, userConfirmed: Boolean): AppResult<Unit> {
-    stopSessionCalls += sessionId to userConfirmed
-    return stopSessionResult
-}
-```
-
-Use default fixtures:
-
-```kotlin
-fun defaultJobs() = listOf(MetasploitJobSummary("2", "Example Job"))
-
-fun defaultJobInfo(id: String) = MetasploitJobInfo(
-    id = id,
-    name = "Example Job",
-    startTimeEpochSeconds = 100,
-    uriPath = null,
-    datastore = emptyMap(),
-    extraFields = emptyMap(),
-)
-
-fun defaultSessions() = listOf(
-    MetasploitSessionSummary(
-        id = 7,
+    private fun session(id: Int) = MetasploitSessionSummary(
+        id = id,
         type = "meterpreter",
         description = "Meterpreter",
         info = "Authorized lab",
@@ -435,28 +529,158 @@ fun defaultSessions() = listOf(
         tunnelPeer = null,
         routes = emptyList(),
         extraFields = emptyMap(),
-    ),
-)
+    )
+}
 ```
 
-### 3.3 RED: atomic refresh and confirmation-only behavior
+- [ ] **Step 3: Replace the Dashboard test repository with this complete programmable fake**
 
-Add tests:
+```kotlin
+private class FakeOperationsRepository : MetasploitOperationsRepository {
+    var jobsResult: AppResult<List<MetasploitJobSummary>> = AppResult.Success(defaultJobs())
+    var sessionsResult: AppResult<List<MetasploitSessionSummary>> = AppResult.Success(defaultSessions())
+    var jobInfoResult: AppResult<MetasploitJobInfo> = AppResult.Success(defaultJobInfo("2"))
+    var stopJobResult: AppResult<Unit> = AppResult.Success(Unit)
+    var stopSessionResult: AppResult<Unit> = AppResult.Success(Unit)
+    var stopJobGate: CompletableDeferred<Unit>? = null
 
-1. Initial load succeeds, then Jobs fails and Sessions returns empty; manual refresh preserves both old lists.
-2. `requestStopJob("2")` exposes `OperationStopTarget.Job("2", "Example Job")` and makes zero stop calls.
-3. `cancelStop()` clears confirmation and makes zero stop calls.
-4. `requestStopSession(99)` exposes a missing-target error and makes zero stop calls.
-5. While stop confirmation is open, refresh, Job detail, maintenance request/confirmation, and another stop request make no calls or state transitions.
-6. A maintenance confirmation already open prevents a stop confirmation.
+    var jobsCalls = 0
+    var sessionsCalls = 0
+    val jobInfoCalls = mutableListOf<String>()
+    val stopJobCalls = mutableListOf<Pair<String, Boolean>>()
+    val stopSessionCalls = mutableListOf<Pair<Int, Boolean>>()
 
-Run RED:
+    override suspend fun jobs(): AppResult<List<MetasploitJobSummary>> =
+        jobsResult.also { jobsCalls += 1 }
+
+    override suspend fun sessions(): AppResult<List<MetasploitSessionSummary>> =
+        sessionsResult.also { sessionsCalls += 1 }
+
+    override suspend fun jobInfo(jobId: String): AppResult<MetasploitJobInfo> =
+        jobInfoResult.also { jobInfoCalls += jobId }
+
+    override suspend fun stopJob(jobId: String, userConfirmed: Boolean): AppResult<Unit> {
+        stopJobCalls += jobId to userConfirmed
+        stopJobGate?.await()
+        return stopJobResult
+    }
+
+    override suspend fun stopSession(sessionId: Int, userConfirmed: Boolean): AppResult<Unit> {
+        stopSessionCalls += sessionId to userConfirmed
+        return stopSessionResult
+    }
+
+    companion object {
+        fun defaultJobs() = listOf(MetasploitJobSummary("2", "Example Job"))
+
+        fun defaultJobInfo(id: String) = MetasploitJobInfo(
+            id = id,
+            name = "Example Job",
+            startTimeEpochSeconds = 100,
+            uriPath = null,
+            datastore = emptyMap(),
+            extraFields = emptyMap(),
+        )
+
+        fun defaultSessions() = listOf(
+            MetasploitSessionSummary(
+                id = 7,
+                type = "meterpreter",
+                description = "Meterpreter",
+                info = "Authorized lab",
+                workspace = "default",
+                sessionHost = "192.0.2.10",
+                sessionPort = 445,
+                targetHost = null,
+                username = null,
+                uuid = null,
+                exploitUuid = null,
+                viaExploit = "exploit/multi/handler",
+                viaPayload = null,
+                architecture = "x64",
+                platform = "windows",
+                tunnelLocal = null,
+                tunnelPeer = null,
+                routes = emptyList(),
+                extraFields = emptyMap(),
+            ),
+        )
+    }
+}
+```
+
+Add imports:
+
+```kotlin
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.runCurrent
+```
+
+- [ ] **Step 4: Add RED tests for atomic refresh and zero-RPC request/cancel**
+
+```kotlin
+@Test
+fun `manual refresh failure preserves both old lists`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    repository.jobsResult = AppResult.Failure(
+        AppError(errorCode = "JOBS_FAILED", userMessage = "jobs failed"),
+    )
+    repository.sessionsResult = AppResult.Success(emptyList())
+    viewModel.refreshOperations()
+    advanceUntilIdle()
+
+    assertThat(viewModel.uiState.value.jobs).containsExactlyElementsIn(FakeOperationsRepository.defaultJobs())
+    assertThat(viewModel.uiState.value.sessions).containsExactlyElementsIn(FakeOperationsRepository.defaultSessions())
+    collection.cancel()
+}
+
+@Test
+fun `request and cancel perform zero stop calls`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    viewModel.requestStopJob("2")
+    assertThat(viewModel.uiState.value.stopConfirmation)
+        .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+    assertThat(repository.stopJobCalls).isEmpty()
+
+    viewModel.cancelStop()
+    assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+    assertThat(repository.stopJobCalls).isEmpty()
+    collection.cancel()
+}
+
+@Test
+fun `missing target fails before confirmation`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    viewModel.requestStopSession(99)
+
+    assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+    assertThat(viewModel.uiState.value.stopError?.title).contains("已不在目前列表")
+    assertThat(repository.stopSessionCalls).isEmpty()
+    collection.cancel()
+}
+```
+
+- [ ] **Step 5: Run RED**
 
 ```bash
 gradle --no-daemon --stacktrace :feature:dashboard:testDebugUnitTest
 ```
 
-### 3.4 GREEN: atomic loader, request/cancel, and cross-confirmation guards
+Expected: missing state/methods and current partial-refresh behavior fails.
+
+- [ ] **Step 6: Add atomic loader types and snapshot fields**
 
 Extend `OperationsSnapshot`:
 
@@ -494,15 +718,41 @@ private suspend fun loadOperationsSnapshot(): OperationsLoadResult {
 }
 ```
 
-`refreshOperations()` must:
+- [ ] **Step 7: Replace `refreshOperations` with atomic application**
 
-- Return while loading, stop confirmation/stopping, maintenance confirmation/loading.
-- Clear old stop message/error only when the refresh is accepted.
-- Preserve current lists while loading.
-- Replace both lists and clear selected Job only when both reads succeed.
-- Preserve both lists and selected Job when either read fails.
+```kotlin
+fun refreshOperations() {
+    val snapshot = operations.value
+    if (
+        snapshot.loading || snapshot.stopConfirmation != null ||
+        snapshot.stoppingTarget != null || maintenance.value.loading ||
+        maintenance.value.confirmation != null
+    ) return
+    operations.value = snapshot.copy(
+        loading = true,
+        error = null,
+        stopMessage = null,
+        stopError = null,
+    )
+    viewModelScope.launch {
+        when (val result = loadOperationsSnapshot()) {
+            is OperationsLoadResult.Failure -> operations.value = operations.value.copy(
+                loading = false,
+                error = result.userMessage,
+            )
+            is OperationsLoadResult.Success -> operations.value = operations.value.copy(
+                jobs = result.jobs,
+                sessions = result.sessions,
+                selectedJob = null,
+                loading = false,
+                error = null,
+            )
+        }
+    }
+}
+```
 
-Add one shared request guard:
+- [ ] **Step 8: Add request/cancel methods**
 
 ```kotlin
 private fun stopRequestBlocked(snapshot: OperationsSnapshot): Boolean =
@@ -511,18 +761,56 @@ private fun stopRequestBlocked(snapshot: OperationsSnapshot): Boolean =
         snapshot.stoppingTarget != null ||
         maintenance.value.loading ||
         maintenance.value.confirmation != null
+
+fun requestStopJob(jobId: String) {
+    val snapshot = operations.value
+    if (stopRequestBlocked(snapshot)) return
+    val job = snapshot.jobs.firstOrNull { it.id == jobId }
+    operations.value = if (job == null) {
+        snapshot.copy(
+            stopMessage = null,
+            stopError = OperationStopError("此 Job 已不在目前列表中，請重新整理。", null),
+        )
+    } else {
+        snapshot.copy(
+            stopConfirmation = OperationStopTarget.Job(job.id, job.name),
+            stopMessage = null,
+            stopError = null,
+        )
+    }
+}
+
+fun requestStopSession(sessionId: Int) {
+    val snapshot = operations.value
+    if (stopRequestBlocked(snapshot)) return
+    val session = snapshot.sessions.firstOrNull { it.id == sessionId }
+    operations.value = if (session == null) {
+        snapshot.copy(
+            stopMessage = null,
+            stopError = OperationStopError("此 Session 已不在目前列表中，請重新整理。", null),
+        )
+    } else {
+        snapshot.copy(
+            stopConfirmation = OperationStopTarget.Session(
+                session.id,
+                session.description,
+                session.viaExploit,
+            ),
+            stopMessage = null,
+            stopError = null,
+        )
+    }
+}
+
+fun cancelStop() {
+    if (operations.value.stoppingTarget != null) return
+    operations.value = operations.value.copy(stopConfirmation = null)
+}
 ```
 
-`requestStopJob` and `requestStopSession` resolve targets only from the current in-memory lists. Missing targets set these exact titles:
+- [ ] **Step 9: Expose Task 3 state/callbacks now**
 
-```text
-此 Job 已不在目前列表中，請重新整理。
-此 Session 已不在目前列表中，請重新整理。
-```
-
-`cancelStop()` clears confirmation and performs no RPC.
-
-Expose now through `DashboardUiState` and both state constructors:
+Add to `DashboardUiState`:
 
 ```kotlin
 val stopConfirmation: OperationStopTarget? = null,
@@ -533,9 +821,20 @@ val onRequestStopSession: (Int) -> Unit = {},
 val onCancelStop: () -> Unit = {},
 ```
 
-Guard `selectJob`, `requestMaintenance`, and `confirmMaintenance` while stop confirmation/stopping is active.
+Add to the combined `service.copy(...)`:
 
-Run and commit:
+```kotlin
+stopConfirmation = operationsSnapshot.stopConfirmation,
+stopMessage = operationsSnapshot.stopMessage,
+stopError = operationsSnapshot.stopError,
+onRequestStopJob = ::requestStopJob,
+onRequestStopSession = ::requestStopSession,
+onCancelStop = ::cancelStop,
+```
+
+Add the same callback references to `initialValue`. Guard `selectJob`, `requestMaintenance`, and `confirmMaintenance` while stop confirmation or stopping is active.
+
+- [ ] **Step 10: Run GREEN and commit**
 
 ```bash
 gradle --no-daemon --stacktrace :feature:dashboard:testDebugUnitTest
@@ -549,69 +848,224 @@ git commit -m "feat: add atomic dashboard stop confirmation state"
 
 ---
 
-## Task 4 — Confirmed stop state machine and global lock
+### Task 4: Implement confirmed stopping and cross-operation locking
 
-**Modify:**
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt`
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt` (`DashboardUiState` only)
-- `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt`
+**Files:**
+- Modify: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardViewModel.kt`
+- Modify: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt` (`DashboardUiState` only)
+- Modify: `feature/dashboard/src/test/kotlin/dev/mago/android/dashboard/DashboardViewModelTest.kt`
 
-### 4.1 RED: mandatory state-machine tests
+**Interfaces:**
+- Produces `confirmStop()`.
+- Exposes `stoppingTarget` and `onConfirmStop`.
 
-Add tests proving all of the following:
-
-1. Non-READY confirmation performs zero stop calls and clears confirmation with `RPC 環境尚未就緒，未送出停止要求。`.
-2. A target removed after opening the confirmation performs zero stop calls:
-   - Configure initial `jobsResult` with a mutable Job list.
-   - Load the ViewModel and open Job confirmation.
-   - Clear that same mutable list before `confirmStop()`.
-   - Assert no stop call and a missing-target error.
-3. Successful Job stop calls `stopJob("2", true)` once, then Jobs once and Sessions once.
-4. Stop failure performs zero verification reads, exposes `無法停止 Session #7`, preserves safe `userMessage`, and clears the global lock.
-5. Verification failure preserves both old lists and selected Job and shows `停止要求已成功送出，但無法確認最新狀態。請手動重新整理。`.
-6. Target still present after verification shows `停止要求已成功送出，但該項目仍出現在最新列表中。`.
-7. Stopping the selected Job clears its detail after successful refresh.
-8. Stopping a Session retains an unrelated selected Job when that Job remains.
-9. During a suspended stop, a second stop, refresh, detail request, maintenance request, and maintenance confirmation are all ignored.
-10. After a completed stop, an accepted manual refresh clears the old stop message and stop error.
-11. Every terminal success/failure branch clears `stoppingTarget`.
-
-For the active-stop lock test, use:
+- [ ] **Step 1: Add RED tests for pre-RPC failure, one call, verification, and stop failure**
 
 ```kotlin
-val gate = CompletableDeferred<Unit>()
-repository.stopJobGate = gate
-viewModel.requestStopJob("2")
-viewModel.confirmStop()
-runCurrent()
-assertThat(viewModel.uiState.value.stoppingTarget)
-    .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+@Test
+fun `non-ready confirmation performs zero stop calls`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.CHECKING_DEVICE), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    viewModel.requestStopJob("2")
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(repository.stopJobCalls).isEmpty()
+    assertThat(viewModel.uiState.value.stopError?.title).contains("尚未就緒")
+    collection.cancel()
+}
+
+@Test
+fun `successful job stop calls once and verifies both lists once`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    val jobsCalls = repository.jobsCalls
+    val sessionsCalls = repository.sessionsCalls
+
+    repository.jobsResult = AppResult.Success(emptyList())
+    viewModel.requestStopJob("2")
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(repository.stopJobCalls).containsExactly("2" to true)
+    assertThat(repository.jobsCalls).isEqualTo(jobsCalls + 1)
+    assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls + 1)
+    assertThat(viewModel.uiState.value.stopMessage).isEqualTo("Job #2 已停止")
+    assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+    collection.cancel()
+}
+
+@Test
+fun `stop failure performs zero verification reads`() = runTest {
+    val repository = FakeOperationsRepository().apply {
+        stopSessionResult = AppResult.Failure(
+            AppError(errorCode = "STOP_FAILED", userMessage = "stop failed"),
+        )
+    }
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    val jobsCalls = repository.jobsCalls
+    val sessionsCalls = repository.sessionsCalls
+
+    viewModel.requestStopSession(7)
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(repository.stopSessionCalls).containsExactly(7 to true)
+    assertThat(repository.jobsCalls).isEqualTo(jobsCalls)
+    assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls)
+    assertThat(viewModel.uiState.value.stopError?.title).isEqualTo("無法停止 Session #7")
+    assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+    collection.cancel()
+}
 ```
 
-Before completing the gate, invoke the blocked actions and assert call counters remain unchanged. Then:
+- [ ] **Step 2: Add RED tests for atomic verification and evidence-based messages**
 
 ```kotlin
-gate.complete(Unit)
-advanceUntilIdle()
-assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+@Test
+fun `verification failure preserves both old lists and selected job`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    viewModel.selectJob("2")
+    advanceUntilIdle()
+
+    repository.jobsResult = AppResult.Success(emptyList())
+    repository.sessionsResult = AppResult.Failure(
+        AppError(errorCode = "SESSIONS_FAILED", userMessage = "sessions failed"),
+    )
+    viewModel.requestStopJob("2")
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(viewModel.uiState.value.jobs).containsExactlyElementsIn(FakeOperationsRepository.defaultJobs())
+    assertThat(viewModel.uiState.value.sessions).containsExactlyElementsIn(FakeOperationsRepository.defaultSessions())
+    assertThat(viewModel.uiState.value.selectedJob?.id).isEqualTo("2")
+    assertThat(viewModel.uiState.value.stopMessage)
+        .isEqualTo("停止要求已成功送出，但無法確認最新狀態。請手動重新整理。")
+    collection.cancel()
+}
+
+@Test
+fun `still-present target is reported without claiming completion`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    viewModel.requestStopSession(7)
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(viewModel.uiState.value.stopMessage)
+        .isEqualTo("停止要求已成功送出，但該項目仍出現在最新列表中。")
+    collection.cancel()
+}
 ```
 
-Run RED:
+- [ ] **Step 3: Add the complete active-stop lock test**
+
+```kotlin
+@Test
+fun `active stop blocks second stop refresh detail and maintenance`() = runTest {
+    val repository = FakeOperationsRepository()
+    val gate = CompletableDeferred<Unit>()
+    repository.stopJobGate = gate
+    val gateway = FakeTermuxGateway()
+    val viewModel = DashboardViewModel(
+        FakeCoordinator(InstallationStage.READY),
+        repository,
+        gateway,
+    )
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    val jobsCalls = repository.jobsCalls
+    val sessionsCalls = repository.sessionsCalls
+
+    viewModel.requestStopJob("2")
+    viewModel.confirmStop()
+    runCurrent()
+    assertThat(viewModel.uiState.value.stoppingTarget)
+        .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+
+    viewModel.requestStopSession(7)
+    viewModel.refreshOperations()
+    viewModel.selectJob("2")
+    viewModel.requestMaintenance(MaintenanceAction.CLEAN_CACHE)
+    viewModel.confirmMaintenance()
+    runCurrent()
+
+    assertThat(repository.stopJobCalls).containsExactly("2" to true)
+    assertThat(repository.stopSessionCalls).isEmpty()
+    assertThat(repository.jobsCalls).isEqualTo(jobsCalls)
+    assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls)
+    assertThat(repository.jobInfoCalls).isEmpty()
+    assertThat(viewModel.uiState.value.maintenanceConfirmation).isNull()
+    assertThat(gateway.actions).isEmpty()
+
+    gate.complete(Unit)
+    advanceUntilIdle()
+    assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+    collection.cancel()
+}
+```
+
+- [ ] **Step 4: Add the maintenance-confirmation lock test**
+
+```kotlin
+@Test
+fun `maintenance confirmation blocks stop confirmation`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+
+    viewModel.requestMaintenance(MaintenanceAction.CLEAN_CACHE)
+    viewModel.requestStopJob("2")
+
+    assertThat(viewModel.uiState.value.maintenanceConfirmation)
+        .isEqualTo(MaintenanceAction.CLEAN_CACHE)
+    assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+    assertThat(repository.stopJobCalls).isEmpty()
+    collection.cancel()
+}
+```
+
+- [ ] **Step 5: Run RED**
 
 ```bash
 gradle --no-daemon --stacktrace :feature:dashboard:testDebugUnitTest
 ```
 
-### 4.2 GREEN: expose and implement confirmed stopping
+Expected: `confirmStop` and public stopping state are absent.
 
-Add to `DashboardUiState` and both constructors:
+- [ ] **Step 6: Expose stopping state and confirmation callback**
+
+Add to `DashboardUiState`:
 
 ```kotlin
 val stoppingTarget: OperationStopTarget? = null,
 val onConfirmStop: () -> Unit = {},
 ```
 
-Implement:
+Add to the combined state:
+
+```kotlin
+stoppingTarget = operationsSnapshot.stoppingTarget,
+onConfirmStop = ::confirmStop,
+```
+
+Add `onConfirmStop = ::confirmStop` to `initialValue`.
+
+- [ ] **Step 7: Implement `confirmStop` with a defensive current-list recheck**
 
 ```kotlin
 fun confirmStop() {
@@ -671,7 +1125,7 @@ fun confirmStop() {
 }
 ```
 
-Implement one verification load:
+- [ ] **Step 8: Implement one atomic post-stop verification**
 
 ```kotlin
 private suspend fun applyPostStopRefresh(target: OperationStopTarget) {
@@ -703,14 +1157,63 @@ private suspend fun applyPostStopRefresh(target: OperationStopTarget) {
 }
 ```
 
-Cross-operation guards:
+Every terminal branch clears `stoppingTarget`; none retries.
 
-- `selectJob` returns while Operations is loading, stop confirmation/stopping, maintenance confirmation/loading.
-- `refreshOperations` and stop requests return while maintenance confirmation/loading.
-- `requestMaintenance` and `confirmMaintenance` return while stop confirmation/stopping.
+- [ ] **Step 9: Complete cross-operation guards**
+
+Use these exact conditions:
+
+```kotlin
+private fun stopStateActive(): Boolean =
+    operations.value.stopConfirmation != null || operations.value.stoppingTarget != null
+```
+
+- `selectJob` returns when Operations is loading, `stopStateActive()`, or maintenance is loading/confirming.
+- `requestMaintenance` and `confirmMaintenance` return when `stopStateActive()`.
+- `requestStopJob`, `requestStopSession`, and `refreshOperations` return when maintenance is loading or confirming.
 - No ignored action is replayed.
 
-Run and commit:
+- [ ] **Step 10: Add selected-Job retention tests**
+
+```kotlin
+@Test
+fun `stopping selected job clears detail after successful refresh`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    viewModel.selectJob("2")
+    advanceUntilIdle()
+
+    repository.jobsResult = AppResult.Success(emptyList())
+    viewModel.requestStopJob("2")
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(viewModel.uiState.value.selectedJob).isNull()
+    collection.cancel()
+}
+
+@Test
+fun `stopping session retains unrelated selected job when job remains`() = runTest {
+    val repository = FakeOperationsRepository()
+    val viewModel = DashboardViewModel(FakeCoordinator(InstallationStage.READY), repository, FakeTermuxGateway())
+    val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+    advanceUntilIdle()
+    viewModel.selectJob("2")
+    advanceUntilIdle()
+
+    repository.sessionsResult = AppResult.Success(emptyList())
+    viewModel.requestStopSession(7)
+    viewModel.confirmStop()
+    advanceUntilIdle()
+
+    assertThat(viewModel.uiState.value.selectedJob?.id).isEqualTo("2")
+    collection.cancel()
+}
+```
+
+- [ ] **Step 11: Run GREEN and commit**
 
 ```bash
 gradle --no-daemon --stacktrace :feature:dashboard:testDebugUnitTest
@@ -722,45 +1225,56 @@ git commit -m "feat: enforce single operation stop state machine"
 
 ---
 
-## Task 5 — Compose controls, documentation, and complete verification
+### Task 5: Render stop controls, document safety, and verify the branch
 
-**Modify:**
-- `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt`
-- `README.md`
+**Files:**
+- Modify: `feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt`
+- Modify: `README.md`
 
-### 5.1 Render confirmation
+- [ ] **Step 1: Render the confirmation dialog**
 
-Add an `AlertDialog` after the existing maintenance dialog.
+Add after the maintenance dialog:
 
-Job text:
-
-```text
-確認停止 Job #<id>？
-名稱：<name>
-停止後無法由 MAGO 復原。操作只會送出一次，不會自動重試。
+```kotlin
+state.stopConfirmation?.let { target ->
+    AlertDialog(
+        onDismissRequest = state.onCancelStop,
+        title = {
+            Text(
+                when (target) {
+                    is OperationStopTarget.Job -> "確認停止 Job #${target.id}？"
+                    is OperationStopTarget.Session -> "確認停止 Session #${target.id}？"
+                },
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (target) {
+                    is OperationStopTarget.Job -> {
+                        Text("名稱：${target.name}")
+                        Text("停止後無法由 MAGO 復原。操作只會送出一次，不會自動重試。")
+                    }
+                    is OperationStopTarget.Session -> {
+                        Text("來源模組：${target.sourceModule ?: "尚未取得"}")
+                        Text("描述：${target.description.ifBlank { "尚未取得" }}")
+                        Text("停止後此 Session 可能無法再次連線。操作只會送出一次，不會自動重試。")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = state.onConfirmStop) { Text("確認停止") }
+        },
+        dismissButton = {
+            TextButton(onClick = state.onCancelStop) { Text("取消") }
+        },
+    )
+}
 ```
 
-Session text:
+- [ ] **Step 2: Add text-labeled destructive buttons and one shared enabled rule**
 
-```text
-確認停止 Session #<id>？
-來源模組：<sourceModule or 尚未取得>
-描述：<description or 尚未取得>
-停止後此 Session 可能無法再次連線。操作只會送出一次，不會自動重試。
-```
-
-Buttons:
-
-```text
-取消
-確認停止
-```
-
-`onDismissRequest` must call `onCancelStop`.
-
-### 5.2 Render buttons and shared enabled rule
-
-Import `ButtonDefaults` and compute:
+Import `ButtonDefaults`. Compute in the Jobs/Sessions section:
 
 ```kotlin
 val operationsControlsEnabled =
@@ -771,9 +1285,7 @@ val operationsControlsEnabled =
     !state.maintenanceLoading
 ```
 
-Change `JobCard` to accept `enabled`, `onSelect`, and `onStop`. Change `SessionCard` to accept `enabled` and `onStop`. Keep controls vertically stackable for 160%/200% text.
-
-Stop button:
+Change `JobCard` to receive `enabled`, `onSelect`, and `onStop`; change `SessionCard` to receive `enabled` and `onStop`. Keep controls vertical for large text. Stop button example:
 
 ```kotlin
 OutlinedButton(
@@ -785,9 +1297,9 @@ OutlinedButton(
 ) { Text("停止 Job") }
 ```
 
-Session uses `停止 Session`. Refresh and Job detail use the same enabled rule. Maintenance buttons additionally require no stop confirmation/stopping.
+Session uses `停止 Session`. Refresh/detail use the same enabled rule. Maintenance buttons require `state.stopConfirmation == null && state.stoppingTarget == null` in addition to their existing loading rule.
 
-### 5.3 Render progress and safe feedback
+- [ ] **Step 3: Render progress and evidence-based feedback**
 
 ```kotlin
 state.stoppingTarget?.let { target ->
@@ -806,15 +1318,15 @@ state.stopError?.let { error ->
 }
 ```
 
-Replace the current read-only sentence with:
+Replace the old read-only sentence with:
 
-```text
-單一 Job／Session 可在二次確認後停止；不提供 Session 命令、批量停止或自動重試。
+```kotlin
+Text("單一 Job／Session 可在二次確認後停止；不提供 Session 命令、批量停止或自動重試。")
 ```
 
-Do not use Toast-only feedback or display technical/raw values.
+No Toast and no technical/raw values.
 
-### 5.4 Build and lint
+- [ ] **Step 4: Build and lint before documentation changes**
 
 ```bash
 gradle --no-daemon --stacktrace \
@@ -823,9 +1335,11 @@ gradle --no-daemon --stacktrace \
   :app:lintDebug
 ```
 
-### 5.5 Update README
+Expected: PASS.
 
-Add capability/safety bullets:
+- [ ] **Step 5: Update README capability and smoke checks**
+
+Add:
 
 ```markdown
 - 可在二次確認後停止單一 Job 或單一 Session
@@ -834,7 +1348,7 @@ Add capability/safety bullets:
 - 不提供 Session 命令、批量停止、全部停止、自動輪詢或背景操作
 ```
 
-Add smoke checks:
+Add:
 
 ```markdown
 - [ ] 取消停止確認時不送出 RPC
@@ -847,7 +1361,7 @@ Add smoke checks:
 - [ ] reduced-motion 下停止過程只使用靜態文字
 ```
 
-### 5.6 Run the exact full existing gate
+- [ ] **Step 6: Run the exact full existing gate**
 
 ```bash
 gradle --no-daemon --stacktrace \
@@ -884,18 +1398,16 @@ git diff --check
 git status --short
 ```
 
-Expected: all gates pass; bundle rebuild creates no diff; only intended files are modified.
+Expected: all gates PASS; bundle rebuild produces no diff; only intended files are modified.
 
-Commit:
+- [ ] **Step 7: Commit UI/docs**
 
 ```bash
 git add feature/dashboard/src/main/kotlin/dev/mago/android/dashboard/DashboardScreen.kt README.md
 git commit -m "feat: add confirmed Job and Session stop controls"
 ```
 
-### 5.7 Draft PR and CI review
-
-Push:
+- [ ] **Step 8: Push and open a Draft PR**
 
 ```bash
 git push -u origin feature/phase8a-single-operation-stop
@@ -907,10 +1419,8 @@ Draft PR title:
 feat: add confirmed single Job and Session stop
 ```
 
-PR body must record RED/GREEN evidence and explicitly state:
+PR body records RED/GREEN evidence and states that only `job.stop`, `session.stop`, one cross-operation lock, and one atomic verification refresh were added. It explicitly states no Session I/O, batch operation, retry, polling, persistence, permission, Bridge runtime, or release-signing change.
 
-- only `job.stop` and `session.stop` were added;
-- one cross-operation lock and one atomic verification refresh are enforced;
-- there is no Session I/O, batch operation, retry, polling, persistence, permission, Bridge runtime, or release-signing change.
+- [ ] **Step 9: Verify CI and scope before marking ready**
 
-Before marking ready, require successful Bridge contract/reproducibility, Debug Build, Lint, `core:rpc`, `feature:dashboard`, all existing risk-directed tests, and Debug APK upload. Compare `main...feature/phase8a-single-operation-stop` and reject unrelated changes.
+Require successful Bridge contract/reproducibility, Debug Build, Lint, `core:rpc`, `feature:dashboard`, all existing risk-directed tests, and Debug APK upload. Compare `main...feature/phase8a-single-operation-stop`; do not mark ready or merge if any unrelated file changed.
