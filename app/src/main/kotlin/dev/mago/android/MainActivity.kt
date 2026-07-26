@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
                 },
                 onModuleTypeSelected = modulesViewModel::selectType,
                 onModuleQueryChanged = modulesViewModel::setQuery,
+                onModuleListModeSelected = modulesViewModel::setListMode,
+                onModuleToggleFavorite = modulesViewModel::toggleFavorite,
                 onModuleSelected = modulesViewModel::selectModule,
                 onModuleBack = modulesViewModel::clearSelection,
                 onModuleRetry = modulesViewModel::retry,

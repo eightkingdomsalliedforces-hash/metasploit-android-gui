@@ -29,10 +29,15 @@ data class ModuleRunConfirmation(
     val redactedOptions: Map<String, String>,
 )
 
+enum class ModuleListMode { ALL, FAVORITES, RECENT }
+
 data class ModulesUiState(
     val type: MetasploitModuleType = MetasploitModuleType.EXPLOIT,
     val query: String = "",
     val modules: List<MetasploitModuleSummary> = emptyList(),
+    val recentModules: List<MetasploitModuleSummary> = emptyList(),
+    val favorites: Set<String> = emptySet(),
+    val listMode: ModuleListMode = ModuleListMode.ALL,
     val selected: MetasploitModuleInfo? = null,
     val optionValues: Map<String, String> = emptyMap(),
     val validationErrors: Map<String, String> = emptyMap(),
@@ -49,8 +54,15 @@ data class ModulesUiState(
     val runErrorMessage: String? = null,
 ) {
     val visibleModules: List<MetasploitModuleSummary>
-        get() = if (query.isBlank()) modules else modules.filter {
-            it.name.contains(query.trim(), ignoreCase = true)
+        get() {
+            val source = when (listMode) {
+                ModuleListMode.ALL -> modules
+                ModuleListMode.FAVORITES -> modules.filter { it.fullName in favorites }
+                ModuleListMode.RECENT -> recentModules.filter { it.type == type }
+            }
+            return if (query.isBlank()) source else source.filter {
+                it.name.contains(query.trim(), ignoreCase = true)
+            }
         }
 
     val canCheck: Boolean
@@ -76,7 +88,7 @@ class ModulesViewModel(
     val uiState = _uiState.asStateFlow()
 
     init {
-        refreshHistory()
+        refreshLocalState()
     }
 
     fun selectType(type: MetasploitModuleType) {
@@ -88,9 +100,22 @@ class ModulesViewModel(
         _uiState.update { it.copy(query = query) }
     }
 
+    fun setListMode(mode: ModuleListMode) {
+        _uiState.update { it.copy(listMode = mode, query = "") }
+    }
+
+    fun toggleFavorite(module: MetasploitModuleSummary) {
+        viewModelScope.launch {
+            val favorite = module.fullName !in _uiState.value.favorites
+            runCatching { localStore.setFavorite(module, favorite) }
+            refreshLibraryNow()
+        }
+    }
+
     fun selectModule(module: MetasploitModuleSummary) {
         viewModelScope.launch {
             runCatching { localStore.recordOpened(module) }
+            refreshLibraryNow()
             _uiState.update {
                 it.copy(
                     loading = true,
@@ -385,8 +410,17 @@ class ModulesViewModel(
         refreshHistoryNow()
     }
 
-    private fun refreshHistory() {
-        viewModelScope.launch { refreshHistoryNow() }
+    private fun refreshLocalState() {
+        viewModelScope.launch {
+            refreshLibraryNow()
+            refreshHistoryNow()
+        }
+    }
+
+    private suspend fun refreshLibraryNow() {
+        val favorites = runCatching { localStore.favorites() }.getOrDefault(emptySet())
+        val recent = runCatching { localStore.recent(RECENT_LIMIT) }.getOrDefault(emptyList())
+        _uiState.update { it.copy(favorites = favorites, recentModules = recent) }
     }
 
     private suspend fun refreshHistoryNow() {
@@ -396,6 +430,7 @@ class ModulesViewModel(
 
     companion object {
         private const val HISTORY_LIMIT = 50
+        private const val RECENT_LIMIT = 50
 
         fun factory(
             repository: MetasploitModuleRepository,
