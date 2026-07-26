@@ -82,13 +82,21 @@ class MessagePackRpcCodec {
         ValueType.MAP -> {
             val converted = LinkedHashMap<String, RpcValue>()
             value.asMapValue().map().forEach { (key, item) ->
-                if (!key.isStringValue) {
-                    throw RpcCodecException(
+                val normalizedKey = when {
+                    key.isStringValue -> key.asStringValue().asString()
+                    key.isIntegerValue -> key.asIntegerValue().toLong().toString()
+                    else -> throw RpcCodecException(
                         "RPC_UNSUPPORTED_MAP_KEY",
-                        "RPC response map keys must be strings",
+                        "RPC response map keys must be strings or integers",
                     )
                 }
-                converted[key.asStringValue().asString()] = convert(item)
+                if (converted.containsKey(normalizedKey)) {
+                    throw RpcCodecException(
+                        "RPC_DUPLICATE_MAP_KEY",
+                        "RPC response contains colliding map key: $normalizedKey",
+                    )
+                }
+                converted[normalizedKey] = convert(item)
             }
             RpcValue.MapValue(converted)
         }
