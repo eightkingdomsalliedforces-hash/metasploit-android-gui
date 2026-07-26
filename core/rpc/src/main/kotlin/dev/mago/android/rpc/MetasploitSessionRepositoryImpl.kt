@@ -24,7 +24,7 @@ class MetasploitSessionRepositoryImpl(
     )
 
     override suspend fun list(): AppResult<List<MetasploitSessionSummary>> =
-        token()?.let { service.list(it) } ?: notAuthenticated()
+        withToken { token -> service.list(token) }
 
     override suspend fun stop(id: Int, userConfirmed: Boolean): AppResult<Unit> =
         withToken { token ->
