@@ -33,4 +33,5 @@ include(
     ":feature:diagnostics",
     ":feature:modules",
     ":feature:terminal",
+    ":feature:operations",
 )
