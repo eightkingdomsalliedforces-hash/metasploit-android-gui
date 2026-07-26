@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.mago.android.common.AppResult
 import dev.mago.android.metasploit.MetasploitModuleRepository
+import dev.mago.android.metasploit.ModuleCatalogRepository
 import dev.mago.android.model.MetasploitModuleInfo
 import dev.mago.android.model.MetasploitModuleLaunch
 import dev.mago.android.model.MetasploitModuleRequest
@@ -31,6 +32,9 @@ data class ModulesUiState(
     val optionValues: Map<String, String> = emptyMap(),
     val validationErrors: Map<String, String> = emptyMap(),
     val compatiblePayloads: List<String> = emptyList(),
+    val favorites: Set<MetasploitModuleSummary> = emptySet(),
+    val recent: List<MetasploitModuleSummary> = emptyList(),
+    val offline: Boolean = false,
     val confirmation: ModuleRunConfirmation? = null,
     val authorizationConfirmed: Boolean = false,
     val launch: MetasploitModuleLaunch? = null,
@@ -45,13 +49,20 @@ data class ModulesUiState(
             it.name.contains(query.trim(), ignoreCase = true)
         }
 
+    val selectedSummary: MetasploitModuleSummary?
+        get() = selected?.let { MetasploitModuleSummary(it.type, it.name) }
+
+    val selectedIsFavorite: Boolean
+        get() = selectedSummary?.let(favorites::contains) == true
+
     val canCheck: Boolean
         get() = selected?.let {
-            it.hasCheck && it.type in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.AUXILIARY)
+            !offline && it.hasCheck &&
+                it.type in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.AUXILIARY)
         } == true
 
     val canExecute: Boolean
-        get() = selected?.type in setOf(
+        get() = !offline && selected?.type in setOf(
             MetasploitModuleType.EXPLOIT,
             MetasploitModuleType.AUXILIARY,
             MetasploitModuleType.POST,
@@ -63,8 +74,29 @@ class ModulesViewModel(
     private val repository: MetasploitModuleRepository,
     private val validator: ModuleRunValidator = ModuleRunValidator(),
 ) : ViewModel() {
+    private val catalogRepository = repository as? ModuleCatalogRepository
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
+
+    init {
+        catalogRepository?.let { catalog ->
+            viewModelScope.launch {
+                catalog.catalogStatus.collect { status ->
+                    _uiState.update { it.copy(offline = status.offline) }
+                }
+            }
+            viewModelScope.launch {
+                catalog.observeFavorites().collect { favorites ->
+                    _uiState.update { it.copy(favorites = favorites) }
+                }
+            }
+            viewModelScope.launch {
+                catalog.observeRecent().collect { recent ->
+                    _uiState.update { it.copy(recent = recent) }
+                }
+            }
+        }
+    }
 
     fun selectType(type: MetasploitModuleType) {
         if (type == _uiState.value.type && _uiState.value.modules.isNotEmpty()) return
@@ -106,7 +138,10 @@ class ModulesViewModel(
                             compatiblePayloads = emptyList(),
                         )
                     }
-                    if (info.type == MetasploitModuleType.EXPLOIT || info.type == MetasploitModuleType.EVASION) {
+                    catalogRepository?.recordRecent(module)
+                    if (!_uiState.value.offline &&
+                        (info.type == MetasploitModuleType.EXPLOIT || info.type == MetasploitModuleType.EVASION)
+                    ) {
                         when (val payloads = repository.compatiblePayloads(info.type, info.name)) {
                             is AppResult.Failure -> Unit
                             is AppResult.Success -> _uiState.update { current ->
@@ -119,6 +154,20 @@ class ModulesViewModel(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fun toggleFavorite() {
+        val catalog = catalogRepository ?: return
+        val module = _uiState.value.selectedSummary ?: return
+        val favorite = !_uiState.value.selectedIsFavorite
+        viewModelScope.launch {
+            when (val result = catalog.setFavorite(module, favorite)) {
+                is AppResult.Failure -> _uiState.update {
+                    it.copy(runErrorMessage = result.error.userMessage)
+                }
+                is AppResult.Success -> Unit
             }
         }
     }
@@ -162,6 +211,10 @@ class ModulesViewModel(
     fun confirmRun() {
         val current = _uiState.value
         val confirmation = current.confirmation ?: return
+        if (current.offline) {
+            _uiState.update { it.copy(runErrorMessage = "離線快取不可執行模組") }
+            return
+        }
         if (!current.authorizationConfirmed) {
             _uiState.update { it.copy(runErrorMessage = "請先確認僅在授權環境執行") }
             return
@@ -195,7 +248,7 @@ class ModulesViewModel(
 
     fun refreshResult() {
         val uuid = _uiState.value.launch?.uuid ?: return
-        if (_uiState.value.runLoading) return
+        if (_uiState.value.runLoading || _uiState.value.offline) return
         _uiState.update { it.copy(runLoading = true, runErrorMessage = null) }
         viewModelScope.launch {
             when (val result = repository.result(uuid)) {
@@ -232,6 +285,10 @@ class ModulesViewModel(
     private fun requestRun(action: MetasploitModuleRunAction) {
         val current = _uiState.value
         val selected = current.selected ?: return
+        if (current.offline) {
+            _uiState.update { it.copy(runErrorMessage = "離線快取不可執行模組") }
+            return
+        }
         if (action == MetasploitModuleRunAction.CHECK && !current.canCheck) {
             _uiState.update { it.copy(runErrorMessage = "此模組不支援 Check") }
             return
@@ -274,7 +331,14 @@ class ModulesViewModel(
 
     private fun loadType(type: MetasploitModuleType) {
         viewModelScope.launch {
-            _uiState.value = ModulesUiState(type = type, loading = true)
+            val current = _uiState.value
+            _uiState.value = ModulesUiState(
+                type = type,
+                loading = true,
+                favorites = current.favorites,
+                recent = current.recent,
+                offline = current.offline,
+            )
             when (val result = repository.list(type)) {
                 is AppResult.Failure -> _uiState.update {
                     it.copy(loading = false, errorMessage = result.error.userMessage)
