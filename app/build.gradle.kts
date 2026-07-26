@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:common"))
     implementation(project(":core:security"))
+    implementation(project(":core:datastore"))
     implementation(project(":core:reporting"))
     implementation(project(":domain:metasploit"))
     implementation(project(":core:model"))
@@ -24,6 +25,7 @@ dependencies {
 
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
+    implementation(libs.biometric)
     implementation(libs.navigation.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)

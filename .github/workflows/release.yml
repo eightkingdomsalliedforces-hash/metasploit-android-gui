@@ -18,7 +18,17 @@ on:
       - '.github/workflows/release.yml'
       - 'build-logic/convention/src/main/kotlin/MagoAndroidApplicationPlugin.kt'
       - 'gradle.properties'
+      - 'gradle/libs.versions.toml'
+      - 'app/build.gradle.kts'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/src/main/kotlin/dev/mago/android/AppContainer.kt'
+      - 'app/src/main/kotlin/dev/mago/android/AppLockViewModel.kt'
+      - 'app/src/main/kotlin/dev/mago/android/AppLockScreen.kt'
+      - 'app/src/main/kotlin/dev/mago/android/MainActivity.kt'
+      - 'core/security/**'
+      - 'core/datastore/**'
       - 'core/ui/src/main/kotlin/dev/mago/android/ui/components/ServiceStatusCard.kt'
+      - 'feature/dashboard/**'
 
 permissions:
   contents: read
