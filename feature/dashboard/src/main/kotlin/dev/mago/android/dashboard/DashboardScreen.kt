@@ -47,11 +47,15 @@ data class DashboardUiState(
     val maintenanceMessage: String? = null,
     val maintenanceError: String? = null,
     val maintenanceHealthSummary: String? = null,
+    val appLockEnabled: Boolean = false,
+    val appLockSettingBusy: Boolean = false,
+    val appLockError: String? = null,
     val onRefreshOperations: () -> Unit = {},
     val onSelectJob: (String) -> Unit = {},
     val onRequestMaintenance: (MaintenanceAction) -> Unit = {},
     val onConfirmMaintenance: () -> Unit = {},
     val onCancelMaintenance: () -> Unit = {},
+    val onRequestAppLockChange: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -114,6 +118,33 @@ fun DashboardScreen(
             status = if (state.metasploitVersion != null) ServiceStatus.RUNNING else ServiceStatus.UNKNOWN,
             detail = state.metasploitVersion ?: "尚未取得",
         )
+
+        HorizontalDivider()
+        Text("安全性", style = MaterialTheme.typography.titleLarge)
+        Card(Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("App 鎖與敏感畫面保護", style = MaterialTheme.typography.titleMedium)
+                Text(if (state.appLockEnabled) "App 鎖已啟用" else "App 鎖目前關閉")
+                Text("啟用後，App 離開前景會要求生物辨識或裝置 PIN／圖形重新解鎖。MAGO 不會保存生物特徵或裝置密碼。")
+                Text("敏感畫面截圖與最近使用畫面預覽會持續受到系統保護。")
+                state.appLockError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                OutlinedButton(
+                    onClick = { state.onRequestAppLockChange(!state.appLockEnabled) },
+                    enabled = !state.appLockSettingBusy,
+                ) {
+                    Text(
+                        when {
+                            state.appLockSettingBusy -> "等待系統驗證"
+                            state.appLockEnabled -> "停用 App 鎖"
+                            else -> "啟用 App 鎖"
+                        },
+                    )
+                }
+            }
+        }
 
         HorizontalDivider()
         Text("維護", style = MaterialTheme.typography.titleLarge)
