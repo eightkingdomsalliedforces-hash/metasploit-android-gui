@@ -5,7 +5,9 @@ import dev.mago.android.common.DefaultDispatcherProvider
 import dev.mago.android.common.DispatcherProvider
 import dev.mago.android.database.InstallationStateMapper
 import dev.mago.android.database.MagoDatabase
+import dev.mago.android.database.ModuleDatabaseMapper
 import dev.mago.android.database.RoomInstallationStateRepository
+import dev.mago.android.database.RoomModuleLocalStore
 import dev.mago.android.installation.BootstrapCoordinator
 import dev.mago.android.installation.BootstrapCoordinatorImpl
 import dev.mago.android.installation.InstallationStateRepository
@@ -15,6 +17,7 @@ import dev.mago.android.metasploit.MetasploitConsoleRepository
 import dev.mago.android.metasploit.MetasploitJobRepository
 import dev.mago.android.metasploit.MetasploitModuleRepository
 import dev.mago.android.metasploit.MetasploitSessionRepository
+import dev.mago.android.metasploit.ModuleLocalStore
 import dev.mago.android.rpc.MessagePackRpcCodec
 import dev.mago.android.rpc.MetasploitConnectionRepositoryImpl
 import dev.mago.android.rpc.MetasploitConsoleRepositoryImpl
@@ -58,6 +61,11 @@ class AppContainer(context: Context) {
         MetasploitConnectionRepositoryImpl(rpcTransport, secretStore, rpcTokenStore)
     val metasploitModuleRepository: MetasploitModuleRepository =
         MetasploitModuleRepositoryImpl(rpcTransport, rpcTokenStore)
+    val moduleLocalStore: ModuleLocalStore = RoomModuleLocalStore(
+        catalogDao = database.moduleCatalogDao(),
+        historyDao = database.moduleHistoryDao(),
+        mapper = ModuleDatabaseMapper(),
+    )
     val metasploitConsoleRepository: MetasploitConsoleRepository =
         MetasploitConsoleRepositoryImpl(rpcTransport, rpcTokenStore)
     val metasploitJobRepository: MetasploitJobRepository =
