@@ -49,6 +49,7 @@ import dev.mago.android.modules.ModulesUiState
 import dev.mago.android.navigation.MagoDestination
 import dev.mago.android.onboarding.OnboardingRoute
 import dev.mago.android.reporting.ReportFormat
+import dev.mago.android.reports.ReportPreviewTab
 import dev.mago.android.reports.ReportsScreen
 import dev.mago.android.reports.ReportsUiState
 import dev.mago.android.terminal.TerminalScreen
@@ -94,6 +95,8 @@ fun MagoApp(
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
     onReportEnsurePreviewLoaded: () -> Unit,
+    onReportRefreshPreview: () -> Unit,
+    onReportPreviewTabSelected: (ReportPreviewTab) -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
@@ -168,6 +171,8 @@ fun MagoApp(
                     onModuleCancelRun = onModuleCancelRun,
                     onModuleRefreshResult = onModuleRefreshResult,
                     onReportEnsurePreviewLoaded = onReportEnsurePreviewLoaded,
+                    onReportRefreshPreview = onReportRefreshPreview,
+                    onReportPreviewTabSelected = onReportPreviewTabSelected,
                     onReportFormatSelected = onReportFormatSelected,
                     onReportExport = onReportExport,
                     onTerminalStart = onTerminalStart,
@@ -255,6 +260,8 @@ private fun AppNavHost(
     onModuleCancelRun: () -> Unit,
     onModuleRefreshResult: () -> Unit,
     onReportEnsurePreviewLoaded: () -> Unit,
+    onReportRefreshPreview: () -> Unit,
+    onReportPreviewTabSelected: (ReportPreviewTab) -> Unit,
     onReportFormatSelected: (ReportFormat) -> Unit,
     onReportExport: () -> Unit,
     onTerminalStart: () -> Unit,
@@ -321,6 +328,8 @@ private fun AppNavHost(
             ReportsScreen(
                 state = reportsState,
                 onEnsurePreviewLoaded = onReportEnsurePreviewLoaded,
+                onRefreshPreview = onReportRefreshPreview,
+                onPreviewTabSelected = onReportPreviewTabSelected,
                 onFormatSelected = onReportFormatSelected,
                 onExport = onReportExport,
             )

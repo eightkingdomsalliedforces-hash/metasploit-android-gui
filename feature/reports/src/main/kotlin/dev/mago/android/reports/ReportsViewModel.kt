@@ -17,10 +17,11 @@ import kotlinx.coroutines.launch
 
 data class ReportsUiState(
     val format: ReportFormat = ReportFormat.JSON,
+    val selectedPreviewTab: ReportPreviewTab = ReportPreviewTab.HOSTS,
     val initialLoading: Boolean = false,
     val refreshing: Boolean = false,
     val exporting: Boolean = false,
-    val previewSnapshot: ReportPreviewSnapshot? = null,
+    val preview: ReportPreviewUiModel? = null,
     val pendingDocument: ReportDocument? = null,
     val refreshErrorMessage: String? = null,
     val exportErrorMessage: String? = null,
@@ -30,7 +31,7 @@ data class ReportsUiState(
         get() = initialLoading || refreshing || exporting
 
     val activeWorkspace: String?
-        get() = previewSnapshot?.workspace?.name
+        get() = preview?.workspaceName
 
     val errorMessage: String?
         get() = exportErrorMessage ?: refreshErrorMessage
@@ -45,16 +46,22 @@ class ReportsViewModel(
     private val _uiState = MutableStateFlow(ReportsUiState())
     val uiState = _uiState.asStateFlow()
 
+    private var rawPreviewSnapshot: ReportPreviewSnapshot? = null
+
     fun ensurePreviewLoaded() {
         val current = _uiState.value
-        if (current.previewSnapshot != null || current.initialLoading || current.refreshing) return
+        if (rawPreviewSnapshot != null || current.initialLoading || current.refreshing) return
         beginPreviewLoad(initial = true)
     }
 
     fun refreshPreview() {
         val current = _uiState.value
         if (current.initialLoading || current.refreshing || current.exporting) return
-        beginPreviewLoad(initial = current.previewSnapshot == null)
+        beginPreviewLoad(initial = rawPreviewSnapshot == null)
+    }
+
+    fun selectPreviewTab(tab: ReportPreviewTab) {
+        _uiState.update { it.copy(selectedPreviewTab = tab) }
     }
 
     fun selectFormat(format: ReportFormat) {
@@ -71,7 +78,7 @@ class ReportsViewModel(
     fun requestExport() {
         val current = _uiState.value
         if (current.exporting || current.initialLoading || current.refreshing) return
-        val preview = current.previewSnapshot
+        val preview = rawPreviewSnapshot
         if (preview == null) {
             _uiState.update {
                 it.copy(
@@ -156,13 +163,16 @@ class ReportsViewModel(
         }
         viewModelScope.launch {
             when (val result = readPreviewSnapshot()) {
-                is AppResult.Success -> _uiState.update {
-                    it.copy(
-                        initialLoading = false,
-                        refreshing = false,
-                        previewSnapshot = result.value,
-                        refreshErrorMessage = null,
-                    )
+                is AppResult.Success -> {
+                    rawPreviewSnapshot = result.value
+                    _uiState.update {
+                        it.copy(
+                            initialLoading = false,
+                            refreshing = false,
+                            preview = result.value.toUiModel(),
+                            refreshErrorMessage = null,
+                        )
+                    }
                 }
 
                 is AppResult.Failure -> _uiState.update {
