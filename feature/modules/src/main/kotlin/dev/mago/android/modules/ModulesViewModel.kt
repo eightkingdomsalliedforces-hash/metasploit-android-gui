@@ -69,11 +69,13 @@ class ModulesViewModel(
     private val _uiState = MutableStateFlow(ModulesUiState())
     val uiState = _uiState.asStateFlow()
     private var searchJob: Job? = null
+    private var payloadJob: Job? = null
 
     fun selectType(type: MetasploitModuleType) {
         val current = _uiState.value
         if (type == current.type && current.modules.isNotEmpty()) return
         searchJob?.cancel()
+        payloadJob?.cancel()
         loadType(type, current.query)
         scheduleSearch(current.query, type)
     }
@@ -92,6 +94,7 @@ class ModulesViewModel(
     }
 
     fun selectModule(module: MetasploitModuleSummary) {
+        payloadJob?.cancel()
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
@@ -147,6 +150,9 @@ class ModulesViewModel(
                 runErrorMessage = null,
                 authorizationConfirmed = false,
             )
+        }
+        if (name.equals("TARGET", ignoreCase = true)) {
+            reloadPayloadsForTarget(value)
         }
     }
 
@@ -226,6 +232,7 @@ class ModulesViewModel(
     }
 
     fun clearSelection() {
+        payloadJob?.cancel()
         _uiState.update {
             it.copy(
                 selected = null,
@@ -245,6 +252,34 @@ class ModulesViewModel(
         val current = _uiState.value
         loadType(current.type, current.query)
         scheduleSearch(current.query, current.type)
+    }
+
+    private fun reloadPayloadsForTarget(rawTarget: String) {
+        val target = rawTarget.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return
+        val selected = _uiState.value.selected ?: return
+        if (selected.type !in setOf(MetasploitModuleType.EXPLOIT, MetasploitModuleType.EVASION)) return
+        payloadJob?.cancel()
+        payloadJob = viewModelScope.launch {
+            when (val result = repository.compatiblePayloads(selected.type, selected.name, target)) {
+                is AppResult.Failure -> Unit
+                is AppResult.Success -> _uiState.update { current ->
+                    val currentTarget = current.optionValues.entries
+                        .firstOrNull { it.key.equals("TARGET", ignoreCase = true) }
+                        ?.value
+                        ?.trim()
+                        ?.toIntOrNull()
+                    if (
+                        current.selected?.type == selected.type &&
+                        current.selected.name == selected.name &&
+                        currentTarget == target
+                    ) {
+                        current.copy(compatiblePayloads = result.value)
+                    } else {
+                        current
+                    }
+                }
+            }
+        }
     }
 
     private fun scheduleSearch(query: String, type: MetasploitModuleType) {
@@ -326,6 +361,7 @@ class ModulesViewModel(
     }
 
     private fun loadType(type: MetasploitModuleType, query: String = _uiState.value.query) {
+        payloadJob?.cancel()
         _uiState.update {
             it.copy(
                 type = type,
