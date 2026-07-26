@@ -33,13 +33,15 @@ class InventoryViewModelTest {
     }
 
     @Test
-    fun `initial load selects default workspace and loads hosts once`() = runTest {
+    fun `initial load selects active workspace and loads hosts once`() = runTest {
         val repository = FakeRepository()
         val viewModel = InventoryViewModel(repository)
         advanceUntilIdle()
 
         assertThat(viewModel.uiState.value.selectedWorkspace).isEqualTo("default")
+        assertThat(viewModel.uiState.value.activeWorkspace?.name).isEqualTo("default")
         assertThat(repository.workspaceCalls).isEqualTo(1)
+        assertThat(repository.currentWorkspaceCalls).isEqualTo(1)
         assertThat(repository.hostCalls).containsExactly("default")
         assertThat(repository.serviceCalls).isEmpty()
     }
@@ -60,21 +62,94 @@ class InventoryViewModelTest {
         assertThat(repository.lastOffset).isEqualTo(0)
     }
 
+    @Test
+    fun `invalid or duplicate workspace never calls mutation RPC`() = runTest {
+        val repository = FakeRepository()
+        val viewModel = InventoryViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.showCreateWorkspace()
+        viewModel.setWorkspaceDraft("bad name")
+        viewModel.submitCreateWorkspace()
+        advanceUntilIdle()
+        assertThat(repository.addCalls).isEmpty()
+        assertThat(viewModel.uiState.value.workspaceValidationError).isNotNull()
+
+        viewModel.setWorkspaceDraft("LAB")
+        viewModel.submitCreateWorkspace()
+        advanceUntilIdle()
+        assertThat(repository.addCalls).isEmpty()
+        assertThat(viewModel.uiState.value.workspaceValidationError).isEqualTo("Workspace 已存在")
+    }
+
+    @Test
+    fun `create selects new workspace without changing active workspace`() = runTest {
+        val repository = FakeRepository()
+        val viewModel = InventoryViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.showCreateWorkspace()
+        viewModel.setWorkspaceDraft("new_lab")
+        viewModel.submitCreateWorkspace()
+        advanceUntilIdle()
+
+        assertThat(repository.addCalls).containsExactly("new_lab")
+        assertThat(repository.setCalls).isEmpty()
+        assertThat(viewModel.uiState.value.selectedWorkspace).isEqualTo("new_lab")
+        assertThat(viewModel.uiState.value.activeWorkspace?.name).isEqualTo("default")
+        assertThat(viewModel.uiState.value.createWorkspaceDialogVisible).isFalse()
+    }
+
+    @Test
+    fun `set active workspace performs one explicit mutation and verifies state`() = runTest {
+        val repository = FakeRepository()
+        val viewModel = InventoryViewModel(repository)
+        advanceUntilIdle()
+        viewModel.selectWorkspace("lab")
+        advanceUntilIdle()
+
+        viewModel.setSelectedWorkspaceActive()
+        advanceUntilIdle()
+
+        assertThat(repository.setCalls).containsExactly("lab")
+        assertThat(viewModel.uiState.value.activeWorkspace?.name).isEqualTo("lab")
+    }
+
     private class FakeRepository : MetasploitInventoryRepository {
         var workspaceCalls = 0
+        var currentWorkspaceCalls = 0
         val hostCalls = mutableListOf<String>()
         val serviceCalls = mutableListOf<String>()
+        val addCalls = mutableListOf<String>()
+        val setCalls = mutableListOf<String>()
         var lastLimit = -1
         var lastOffset = -1
+        private var activeName = "default"
+        private val workspaceValues = mutableListOf(
+            workspace("lab", 2),
+            workspace("default", 1),
+        )
 
         override suspend fun workspaces(): AppResult<List<MetasploitWorkspaceSummary>> {
             workspaceCalls += 1
-            return AppResult.Success(
-                listOf(
-                    workspace("lab", 2),
-                    workspace("default", 1),
-                ),
-            )
+            return AppResult.Success(workspaceValues.toList())
+        }
+
+        override suspend fun currentWorkspace(): AppResult<MetasploitWorkspaceSummary> {
+            currentWorkspaceCalls += 1
+            return AppResult.Success(workspaceValues.first { it.name == activeName })
+        }
+
+        override suspend fun addWorkspace(name: String): AppResult<Unit> {
+            addCalls += name
+            workspaceValues += workspace(name, workspaceValues.size.toLong() + 1)
+            return AppResult.Success(Unit)
+        }
+
+        override suspend fun setWorkspace(name: String): AppResult<Unit> {
+            setCalls += name
+            activeName = name
+            return AppResult.Success(Unit)
         }
 
         override suspend fun hosts(workspace: String, limit: Int, offset: Int): AppResult<List<MetasploitHostRecord>> {

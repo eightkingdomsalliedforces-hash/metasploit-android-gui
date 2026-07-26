@@ -24,31 +24,31 @@
 
 **Files:** modify `RpcMethod.kt`, `RpcInventoryService.kt`, repository interface/implementation, and focused RPC tests.
 
-- [ ] Add `DB_CURRENT_WORKSPACE`, `DB_ADD_WORKSPACE`, and `DB_SET_WORKSPACE`.
-- [ ] Encode create/set arguments as one `RpcValue.StringValue`.
-- [ ] Parse current Workspace name and ID; require non-blank name and non-negative ID.
-- [ ] Treat only `result=success` as successful mutation.
-- [ ] Preserve existing localhost/token boundaries.
+- [x] Add `DB_CURRENT_WORKSPACE`, `DB_ADD_WORKSPACE`, and `DB_SET_WORKSPACE`.
+- [x] Encode create/set arguments as one `RpcValue.StringValue`.
+- [x] Parse current Workspace name and ID; require non-blank name and non-negative ID.
+- [x] Treat only `result=success` as successful mutation.
+- [x] Preserve existing localhost/token boundaries.
 
 ### Task 2: Add Explicit ViewModel State
 
 **Files:** modify `InventoryViewModel.kt` and focused tests.
 
-- [ ] Track `activeWorkspace`, create-dialog visibility, draft name, validation error, and mutation loading/error.
-- [ ] Validate the conservative Workspace-name regex and duplicates locally before RPC.
-- [ ] Create Workspace only after explicit submit; refresh and browse-select the new Workspace without making it active automatically.
-- [ ] Set active Workspace only after explicit button action.
-- [ ] Never auto-retry mutation calls.
+- [x] Track `activeWorkspace`, create-dialog visibility, draft name, validation error, and mutation loading/error.
+- [x] Validate the conservative Workspace-name regex and duplicates locally before RPC.
+- [x] Create Workspace only after explicit submit; refresh and browse-select the new Workspace without making it active automatically.
+- [x] Set active Workspace only after explicit button action.
+- [x] Never auto-retry mutation calls.
 
 ### Task 3: Add Compose Controls
 
-**Files:** modify `InventoryScreen.kt`; App wiring remains unchanged because actions stay inside `InventoryViewModel`.
+**Files:** modify `InventoryScreen.kt`, `MagoApp.kt`, and `MainActivity.kt`.
 
-- [ ] Mark the active Workspace in the selector.
-- [ ] Add “新增 Workspace” dialog with inline validation.
-- [ ] Add “設為作用中” button when browse selection differs from active Workspace.
-- [ ] Disable mutation controls while an RPC mutation is in flight.
-- [ ] Keep inventory lists and pagination behavior unchanged.
+- [x] Mark the active Workspace in the selector.
+- [x] Add “新增 Workspace” dialog with inline validation.
+- [x] Add “設為作用中” button when browse selection differs from active Workspace.
+- [x] Disable mutation controls while an RPC mutation is in flight.
+- [x] Keep inventory lists and pagination behavior unchanged.
 
 ### Task 4: CI Verification
 

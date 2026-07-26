@@ -17,6 +17,35 @@ class RpcInventoryService(private val transport: RpcTransport) {
             is AppResult.Success -> parseArray(result.value, "workspaces", ::parseWorkspace)
         }
 
+    suspend fun currentWorkspace(token: String): AppResult<MetasploitWorkspaceSummary> {
+        return when (val result = transport.call(RpcMethod.DB_CURRENT_WORKSPACE, token)) {
+            is AppResult.Failure -> result
+            is AppResult.Success -> {
+                val map = result.value.mapOrNull()
+                    ?: return invalid("RPC_CURRENT_WORKSPACE_INVALID", "Metasploit 作用中 Workspace 格式不正確")
+                val name = map.string("workspace")?.takeIf { it.isNotBlank() }
+                    ?: return invalid("RPC_CURRENT_WORKSPACE_NAME_MISSING", "Metasploit 沒有回傳作用中 Workspace")
+                val id = map.long("workspace_id")?.takeIf { it >= 0 }
+                    ?: return invalid("RPC_CURRENT_WORKSPACE_ID_MISSING", "Metasploit 沒有回傳 Workspace ID")
+                AppResult.Success(
+                    MetasploitWorkspaceSummary(
+                        id = id,
+                        name = name,
+                        createdAtEpochSeconds = null,
+                        updatedAtEpochSeconds = null,
+                        extraFields = map.filterKeys { it !in CURRENT_WORKSPACE_FIELDS },
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun addWorkspace(token: String, name: String): AppResult<Unit> =
+        mutateWorkspace(RpcMethod.DB_ADD_WORKSPACE, token, name)
+
+    suspend fun setWorkspace(token: String, name: String): AppResult<Unit> =
+        mutateWorkspace(RpcMethod.DB_SET_WORKSPACE, token, name)
+
     suspend fun hosts(
         token: String,
         workspace: String,
@@ -40,6 +69,26 @@ class RpcInventoryService(private val transport: RpcTransport) {
         offset: Int,
     ): AppResult<List<MetasploitVulnerabilityRecord>> =
         callCollection(RpcMethod.DB_VULNS, token, workspace, limit, offset, "vulns", ::parseVulnerability)
+
+    private suspend fun mutateWorkspace(
+        method: RpcMethod,
+        token: String,
+        name: String,
+    ): AppResult<Unit> {
+        val normalized = name.trim()
+        if (!WORKSPACE_NAME_PATTERN.matches(normalized)) {
+            return invalid("RPC_WORKSPACE_NAME_INVALID", "Workspace 名稱格式不正確", false)
+        }
+        val response = transport.call(method, token, listOf(RpcValue.StringValue(normalized)))
+        return when (response) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> {
+                val result = response.value.mapOrNull()?.string("result")
+                if (result == "success") AppResult.Success(Unit)
+                else invalid("RPC_WORKSPACE_MUTATION_FAILED", "Metasploit 無法完成 Workspace 操作", false)
+            }
+        }
+    }
 
     private suspend fun <T> callCollection(
         method: RpcMethod,
@@ -175,6 +224,8 @@ class RpcInventoryService(private val transport: RpcTransport) {
 
     private companion object {
         const val MAX_LIMIT = 100
+        val WORKSPACE_NAME_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}${'$'}")
+        val CURRENT_WORKSPACE_FIELDS = setOf("workspace", "workspace_id")
         val WORKSPACE_FIELDS = setOf("id", "name", "created_at", "updated_at")
         val HOST_FIELDS = setOf(
             "created_at", "address", "mac", "name", "state", "os_name", "os_flavor",

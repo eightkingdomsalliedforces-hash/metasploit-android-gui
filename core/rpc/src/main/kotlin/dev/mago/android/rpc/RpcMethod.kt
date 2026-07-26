@@ -42,6 +42,9 @@ value class RpcMethod(val value: String) {
         val SESSION_LIST = RpcMethod("session.list")
 
         val DB_WORKSPACES = RpcMethod("db.workspaces")
+        val DB_CURRENT_WORKSPACE = RpcMethod("db.current_workspace")
+        val DB_ADD_WORKSPACE = RpcMethod("db.add_workspace")
+        val DB_SET_WORKSPACE = RpcMethod("db.set_workspace")
         val DB_HOSTS = RpcMethod("db.hosts")
         val DB_SERVICES = RpcMethod("db.services")
         val DB_VULNS = RpcMethod("db.vulns")
