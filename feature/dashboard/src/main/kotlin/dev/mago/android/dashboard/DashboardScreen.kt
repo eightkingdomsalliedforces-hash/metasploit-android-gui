@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -40,8 +42,16 @@ data class DashboardUiState(
     val selectedJob: MetasploitJobInfo? = null,
     val operationsLoading: Boolean = false,
     val operationsError: String? = null,
+    val maintenanceConfirmation: MaintenanceAction? = null,
+    val maintenanceLoading: Boolean = false,
+    val maintenanceMessage: String? = null,
+    val maintenanceError: String? = null,
+    val maintenanceHealthSummary: String? = null,
     val onRefreshOperations: () -> Unit = {},
     val onSelectJob: (String) -> Unit = {},
+    val onRequestMaintenance: (MaintenanceAction) -> Unit = {},
+    val onConfirmMaintenance: () -> Unit = {},
+    val onCancelMaintenance: () -> Unit = {},
 )
 
 @Composable
@@ -50,6 +60,25 @@ fun DashboardScreen(
     onOpenTermux: () -> Unit,
     onRunDiagnostics: () -> Unit,
 ) {
+    state.maintenanceConfirmation?.let { action ->
+        AlertDialog(
+            onDismissRequest = state.onCancelMaintenance,
+            title = { Text(action.confirmationTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(action.confirmationMessage)
+                    Text("操作只會執行一次，完成後會自動做一次健康檢查。")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = state.onConfirmMaintenance) { Text("確認執行") }
+            },
+            dismissButton = {
+                TextButton(onClick = state.onCancelMaintenance) { Text("取消") }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -85,6 +114,36 @@ fun DashboardScreen(
             status = if (state.metasploitVersion != null) ServiceStatus.RUNNING else ServiceStatus.UNKNOWN,
             detail = state.metasploitVersion ?: "尚未取得",
         )
+
+        HorizontalDivider()
+        Text("維護", style = MaterialTheme.typography.titleLarge)
+        Text("所有操作都使用固定 Bridge 白名單，不會執行使用者輸入的 Shell，也不會自動排程。")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(
+                onClick = { state.onRequestMaintenance(MaintenanceAction.UPDATE_METASPLOIT) },
+                enabled = !state.maintenanceLoading,
+            ) {
+                Text("更新 Metasploit")
+            }
+            OutlinedButton(
+                onClick = { state.onRequestMaintenance(MaintenanceAction.CLEAN_CACHE) },
+                enabled = !state.maintenanceLoading,
+            ) {
+                Text("清理快取")
+            }
+        }
+        if (state.maintenanceLoading) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text("維護操作執行中，請保持 App 與 Termux 可用。")
+        }
+        state.maintenanceMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        state.maintenanceError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.maintenanceHealthSummary?.let {
+            Text("健康狀態：$it", style = MaterialTheme.typography.bodySmall)
+        }
 
         HorizontalDivider()
         Row(

@@ -7,16 +7,39 @@ import dev.mago.android.common.AppResult
 import dev.mago.android.installation.BootstrapCoordinator
 import dev.mago.android.installation.InstallationFailureKind
 import dev.mago.android.installation.InstallationStage
+import dev.mago.android.installation.TermuxGateway
 import dev.mago.android.metasploit.MetasploitOperationsRepository
 import dev.mago.android.model.MetasploitJobInfo
 import dev.mago.android.model.MetasploitJobSummary
 import dev.mago.android.model.MetasploitSessionSummary
 import dev.mago.android.model.ServiceStatus
+import dev.mago.android.model.bridge.BridgeAction
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class MaintenanceAction(
+    val bridgeAction: BridgeAction,
+    val label: String,
+    val confirmationTitle: String,
+    val confirmationMessage: String,
+) {
+    UPDATE_METASPLOIT(
+        bridgeAction = BridgeAction.UPDATE_METASPLOIT,
+        label = "更新 Metasploit",
+        confirmationTitle = "確認更新 Metasploit",
+        confirmationMessage = "更新可能需要較長時間。請保持 Termux 可用並避免關閉 App；此操作不會在背景自動重試。",
+    ),
+    CLEAN_CACHE(
+        bridgeAction = BridgeAction.CLEAN_CACHE,
+        label = "清理快取",
+        confirmationTitle = "確認清理快取",
+        confirmationMessage = "這會清除可重新建立的 Termux／Metasploit 快取，不會刪除 Workspace、資產或執行歷史。",
+    ),
+}
 
 private data class OperationsSnapshot(
     val jobs: List<MetasploitJobSummary> = emptyList(),
@@ -26,11 +49,21 @@ private data class OperationsSnapshot(
     val error: String? = null,
 )
 
+private data class MaintenanceSnapshot(
+    val confirmation: MaintenanceAction? = null,
+    val loading: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+    val healthSummary: String? = null,
+)
+
 class DashboardViewModel(
-    coordinator: BootstrapCoordinator,
+    private val coordinator: BootstrapCoordinator,
     private val operationsRepository: MetasploitOperationsRepository,
+    private val termuxGateway: TermuxGateway,
 ) : ViewModel() {
     private val operations = MutableStateFlow(OperationsSnapshot())
+    private val maintenance = MutableStateFlow(MaintenanceSnapshot())
 
     private val serviceState = combine(
         coordinator.state,
@@ -84,15 +117,23 @@ class DashboardViewModel(
         )
     }
 
-    val uiState = combine(serviceState, operations) { service, snapshot ->
+    val uiState = combine(serviceState, operations, maintenance) { service, operationsSnapshot, maintenanceSnapshot ->
         service.copy(
-            jobs = snapshot.jobs,
-            sessions = snapshot.sessions,
-            selectedJob = snapshot.selectedJob,
-            operationsLoading = snapshot.loading,
-            operationsError = snapshot.error,
+            jobs = operationsSnapshot.jobs,
+            sessions = operationsSnapshot.sessions,
+            selectedJob = operationsSnapshot.selectedJob,
+            operationsLoading = operationsSnapshot.loading,
+            operationsError = operationsSnapshot.error,
+            maintenanceConfirmation = maintenanceSnapshot.confirmation,
+            maintenanceLoading = maintenanceSnapshot.loading,
+            maintenanceMessage = maintenanceSnapshot.message,
+            maintenanceError = maintenanceSnapshot.error,
+            maintenanceHealthSummary = maintenanceSnapshot.healthSummary,
             onRefreshOperations = ::refreshOperations,
             onSelectJob = ::selectJob,
+            onRequestMaintenance = ::requestMaintenance,
+            onConfirmMaintenance = ::confirmMaintenance,
+            onCancelMaintenance = ::cancelMaintenance,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -100,6 +141,9 @@ class DashboardViewModel(
         initialValue = DashboardUiState(
             onRefreshOperations = ::refreshOperations,
             onSelectJob = ::selectJob,
+            onRequestMaintenance = ::requestMaintenance,
+            onConfirmMaintenance = ::confirmMaintenance,
+            onCancelMaintenance = ::cancelMaintenance,
         ),
     )
 
@@ -152,14 +196,92 @@ class DashboardViewModel(
         }
     }
 
+    fun requestMaintenance(action: MaintenanceAction) {
+        if (maintenance.value.loading) return
+        maintenance.value = maintenance.value.copy(
+            confirmation = action,
+            message = null,
+            error = null,
+            healthSummary = null,
+        )
+    }
+
+    fun cancelMaintenance() {
+        if (maintenance.value.loading) return
+        maintenance.value = maintenance.value.copy(confirmation = null)
+    }
+
+    fun confirmMaintenance() {
+        val action = maintenance.value.confirmation ?: return
+        if (maintenance.value.loading) return
+        if (coordinator.state.value.stage != InstallationStage.READY) {
+            maintenance.value = maintenance.value.copy(
+                confirmation = null,
+                error = "環境尚未就緒，請先完成安裝或執行診斷。",
+            )
+            return
+        }
+
+        maintenance.value = MaintenanceSnapshot(loading = true)
+        viewModelScope.launch {
+            val actionResult = termuxGateway.execute(
+                action = action.bridgeAction,
+                operationId = UUID.randomUUID().toString(),
+            )
+            when (actionResult) {
+                is AppResult.Failure -> maintenance.value = MaintenanceSnapshot(
+                    error = actionResult.error.userMessage,
+                )
+                is AppResult.Success -> {
+                    if (!actionResult.value.success) {
+                        maintenance.value = MaintenanceSnapshot(error = actionResult.value.message)
+                        return@launch
+                    }
+                    runPostMaintenanceHealthCheck(action)
+                }
+            }
+        }
+    }
+
+    private suspend fun runPostMaintenanceHealthCheck(action: MaintenanceAction) {
+        when (
+            val healthResult = termuxGateway.execute(
+                action = BridgeAction.HEALTH_CHECK,
+                operationId = UUID.randomUUID().toString(),
+            )
+        ) {
+            is AppResult.Failure -> maintenance.value = MaintenanceSnapshot(
+                error = "${action.label}已完成，但健康檢查失敗：${healthResult.error.userMessage}",
+            )
+            is AppResult.Success -> {
+                if (!healthResult.value.success) {
+                    maintenance.value = MaintenanceSnapshot(
+                        error = "${action.label}已完成，但健康檢查失敗：${healthResult.value.message}",
+                    )
+                    return
+                }
+                val summary = healthResult.value.data
+                    .toSortedMap()
+                    .entries
+                    .joinToString(" · ") { (name, value) -> "$name=$value" }
+                    .takeIf { it.isNotBlank() }
+                maintenance.value = MaintenanceSnapshot(
+                    message = "${action.label}完成，健康檢查通過。",
+                    healthSummary = summary,
+                )
+            }
+        }
+    }
+
     companion object {
         fun factory(
             coordinator: BootstrapCoordinator,
             operationsRepository: MetasploitOperationsRepository,
+            termuxGateway: TermuxGateway,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                DashboardViewModel(coordinator, operationsRepository) as T
+                DashboardViewModel(coordinator, operationsRepository, termuxGateway) as T
         }
     }
 }
