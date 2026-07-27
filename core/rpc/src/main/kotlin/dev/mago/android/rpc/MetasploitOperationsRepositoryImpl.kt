@@ -27,6 +27,20 @@ class MetasploitOperationsRepositoryImpl(
     override suspend fun sessions(): AppResult<List<MetasploitSessionSummary>> =
         token()?.let { service.sessions(it) } ?: notAuthenticated()
 
+    override suspend fun stopJob(
+        jobId: String,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> = token()?.let {
+        service.stopJob(it, jobId, userConfirmed)
+    } ?: notAuthenticated()
+
+    override suspend fun stopSession(
+        sessionId: Int,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> = token()?.let {
+        service.stopSession(it, sessionId, userConfirmed)
+    } ?: notAuthenticated()
+
     private fun token(): String? = tokenStore.get()
 
     private fun <T> notAuthenticated(): AppResult<T> = AppResult.Failure(

@@ -37,6 +37,86 @@ class RpcOperationsService(private val transport: RpcTransport) {
             is AppResult.Success -> parseSessions(result.value)
         }
 
+    suspend fun stopJob(
+        token: String,
+        jobId: String,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> {
+        if (!userConfirmed) {
+            return invalid(
+                "RPC_JOB_CONFIRMATION_REQUIRED",
+                "停止 Job 需要使用者明確確認",
+                retryable = false,
+            )
+        }
+        val parsedJobId = jobId.toLongOrNull()?.takeIf { it >= 0 }
+            ?: return invalid("RPC_JOB_ID_INVALID", "Job ID 不正確", retryable = false)
+        return when (
+            val response = transport.call(
+                RpcMethod.JOB_STOP,
+                token,
+                listOf(RpcValue.IntValue(parsedJobId)),
+            )
+        ) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> parseStopResult(
+                value = response.value,
+                invalidCode = "RPC_JOB_STOP_RESPONSE_INVALID",
+                failedCode = "RPC_JOB_STOP_FAILED",
+                failedMessage = "Metasploit 無法停止 Job",
+            )
+        }
+    }
+
+    suspend fun stopSession(
+        token: String,
+        sessionId: Int,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> {
+        if (!userConfirmed) {
+            return invalid(
+                "RPC_SESSION_CONFIRMATION_REQUIRED",
+                "停止 Session 需要使用者明確確認",
+                retryable = false,
+            )
+        }
+        if (sessionId < 0) {
+            return invalid("RPC_SESSION_ID_INVALID", "Session ID 不正確", retryable = false)
+        }
+        return when (
+            val response = transport.call(
+                RpcMethod.SESSION_STOP,
+                token,
+                listOf(RpcValue.IntValue(sessionId.toLong())),
+            )
+        ) {
+            is AppResult.Failure -> response
+            is AppResult.Success -> parseStopResult(
+                value = response.value,
+                invalidCode = "RPC_SESSION_STOP_RESPONSE_INVALID",
+                failedCode = "RPC_SESSION_STOP_FAILED",
+                failedMessage = "Metasploit 無法停止 Session",
+            )
+        }
+    }
+
+    private fun parseStopResult(
+        value: RpcValue,
+        invalidCode: String,
+        failedCode: String,
+        failedMessage: String,
+    ): AppResult<Unit> {
+        val map = (value as? RpcValue.MapValue)?.value
+            ?: return invalid(invalidCode, "Metasploit 停止回應格式不正確")
+        val result = (map["result"] as? RpcValue.StringValue)?.value
+            ?: return invalid(invalidCode, "Metasploit 停止回應格式不正確")
+        return if (result.equals("success", ignoreCase = true)) {
+            AppResult.Success(Unit)
+        } else {
+            invalid(failedCode, failedMessage)
+        }
+    }
+
     private fun parseJobs(value: RpcValue): AppResult<List<MetasploitJobSummary>> {
         val map = value.mapOrNull()
             ?: return invalid("RPC_JOB_LIST_INVALID", "Metasploit Job 列表格式不正確")

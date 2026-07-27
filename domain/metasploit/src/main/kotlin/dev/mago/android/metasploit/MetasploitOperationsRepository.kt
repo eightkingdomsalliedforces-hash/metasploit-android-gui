@@ -9,4 +9,6 @@ interface MetasploitOperationsRepository {
     suspend fun jobs(): AppResult<List<MetasploitJobSummary>>
     suspend fun jobInfo(jobId: String): AppResult<MetasploitJobInfo>
     suspend fun sessions(): AppResult<List<MetasploitSessionSummary>>
+    suspend fun stopJob(jobId: String, userConfirmed: Boolean): AppResult<Unit>
+    suspend fun stopSession(sessionId: Int, userConfirmed: Boolean): AppResult<Unit>
 }

@@ -47,7 +47,20 @@ private data class OperationsSnapshot(
     val selectedJob: MetasploitJobInfo? = null,
     val loading: Boolean = false,
     val error: String? = null,
+    val stopConfirmation: OperationStopTarget? = null,
+    val stoppingTarget: OperationStopTarget? = null,
+    val stopMessage: String? = null,
+    val stopError: OperationStopError? = null,
 )
+
+private sealed interface OperationsLoadResult {
+    data class Success(
+        val jobs: List<MetasploitJobSummary>,
+        val sessions: List<MetasploitSessionSummary>,
+    ) : OperationsLoadResult
+
+    data class Failure(val userMessage: String) : OperationsLoadResult
+}
 
 private data class MaintenanceSnapshot(
     val confirmation: MaintenanceAction? = null,
@@ -124,6 +137,10 @@ class DashboardViewModel(
             selectedJob = operationsSnapshot.selectedJob,
             operationsLoading = operationsSnapshot.loading,
             operationsError = operationsSnapshot.error,
+            stopConfirmation = operationsSnapshot.stopConfirmation,
+            stoppingTarget = operationsSnapshot.stoppingTarget,
+            stopMessage = operationsSnapshot.stopMessage,
+            stopError = operationsSnapshot.stopError,
             maintenanceConfirmation = maintenanceSnapshot.confirmation,
             maintenanceLoading = maintenanceSnapshot.loading,
             maintenanceMessage = maintenanceSnapshot.message,
@@ -131,6 +148,10 @@ class DashboardViewModel(
             maintenanceHealthSummary = maintenanceSnapshot.healthSummary,
             onRefreshOperations = ::refreshOperations,
             onSelectJob = ::selectJob,
+            onRequestStopJob = ::requestStopJob,
+            onRequestStopSession = ::requestStopSession,
+            onConfirmStop = ::confirmStop,
+            onCancelStop = ::cancelStop,
             onRequestMaintenance = ::requestMaintenance,
             onConfirmMaintenance = ::confirmMaintenance,
             onCancelMaintenance = ::cancelMaintenance,
@@ -141,6 +162,10 @@ class DashboardViewModel(
         initialValue = DashboardUiState(
             onRefreshOperations = ::refreshOperations,
             onSelectJob = ::selectJob,
+            onRequestStopJob = ::requestStopJob,
+            onRequestStopSession = ::requestStopSession,
+            onConfirmStop = ::confirmStop,
+            onCancelStop = ::cancelStop,
             onRequestMaintenance = ::requestMaintenance,
             onConfirmMaintenance = ::confirmMaintenance,
             onCancelMaintenance = ::cancelMaintenance,
@@ -152,35 +177,46 @@ class DashboardViewModel(
     }
 
     fun refreshOperations() {
-        if (operations.value.loading) return
-        operations.value = operations.value.copy(loading = true, error = null)
+        val snapshot = operations.value
+        if (
+            snapshot.loading ||
+            snapshot.stopConfirmation != null ||
+            snapshot.stoppingTarget != null ||
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null
+        ) return
+
+        operations.value = snapshot.copy(
+            loading = true,
+            error = null,
+            stopMessage = null,
+            stopError = null,
+        )
         viewModelScope.launch {
-            val jobsResult = operationsRepository.jobs()
-            val sessionsResult = operationsRepository.sessions()
-            val errors = buildList {
-                if (jobsResult is AppResult.Failure) add(jobsResult.error.userMessage)
-                if (sessionsResult is AppResult.Failure) add(sessionsResult.error.userMessage)
+            when (val result = loadOperationsSnapshot()) {
+                is OperationsLoadResult.Failure -> operations.value = operations.value.copy(
+                    loading = false,
+                    error = result.userMessage,
+                )
+                is OperationsLoadResult.Success -> operations.value = operations.value.copy(
+                    jobs = result.jobs,
+                    sessions = result.sessions,
+                    selectedJob = null,
+                    loading = false,
+                    error = null,
+                )
             }
-            val jobs = when (jobsResult) {
-                is AppResult.Success -> jobsResult.value
-                is AppResult.Failure -> emptyList()
-            }
-            val sessions = when (sessionsResult) {
-                is AppResult.Success -> sessionsResult.value
-                is AppResult.Failure -> emptyList()
-            }
-            operations.value = operations.value.copy(
-                jobs = jobs,
-                sessions = sessions,
-                selectedJob = null,
-                loading = false,
-                error = errors.distinct().joinToString("\n").takeIf { it.isNotBlank() },
-            )
         }
     }
 
     fun selectJob(jobId: String) {
-        if (operations.value.loading) return
+        if (
+            operations.value.loading ||
+            stopStateActive() ||
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null
+        ) return
+
         operations.value = operations.value.copy(loading = true, error = null)
         viewModelScope.launch {
             when (val result = operationsRepository.jobInfo(jobId)) {
@@ -196,8 +232,133 @@ class DashboardViewModel(
         }
     }
 
+    fun requestStopJob(jobId: String) {
+        val snapshot = operations.value
+        if (stopRequestBlocked(snapshot)) return
+        val job = snapshot.jobs.firstOrNull { it.id == jobId }
+        operations.value = if (job == null) {
+            snapshot.copy(
+                stopMessage = null,
+                stopError = OperationStopError(
+                    title = "此 Job 已不在目前列表中，請重新整理。",
+                    userMessage = null,
+                ),
+            )
+        } else {
+            snapshot.copy(
+                stopConfirmation = OperationStopTarget.Job(job.id, job.name),
+                stopMessage = null,
+                stopError = null,
+            )
+        }
+    }
+
+    fun requestStopSession(sessionId: Int) {
+        val snapshot = operations.value
+        if (stopRequestBlocked(snapshot)) return
+        val session = snapshot.sessions.firstOrNull { it.id == sessionId }
+        operations.value = if (session == null) {
+            snapshot.copy(
+                stopMessage = null,
+                stopError = OperationStopError(
+                    title = "此 Session 已不在目前列表中，請重新整理。",
+                    userMessage = null,
+                ),
+            )
+        } else {
+            snapshot.copy(
+                stopConfirmation = OperationStopTarget.Session(
+                    id = session.id,
+                    description = session.description,
+                    sourceModule = session.viaExploit,
+                ),
+                stopMessage = null,
+                stopError = null,
+            )
+        }
+    }
+
+    fun cancelStop() {
+        if (operations.value.stoppingTarget != null) return
+        operations.value = operations.value.copy(stopConfirmation = null)
+    }
+
+    fun confirmStop() {
+        val snapshot = operations.value
+        val target = snapshot.stopConfirmation ?: return
+        if (
+            snapshot.loading ||
+            snapshot.stoppingTarget != null ||
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null
+        ) return
+
+        if (coordinator.state.value.stage != InstallationStage.READY) {
+            operations.value = snapshot.copy(
+                stopConfirmation = null,
+                stopError = OperationStopError(
+                    title = "RPC 環境尚未就緒，未送出停止要求。",
+                    userMessage = null,
+                ),
+            )
+            return
+        }
+
+        if (!target.existsIn(snapshot.jobs, snapshot.sessions)) {
+            operations.value = snapshot.copy(
+                stopConfirmation = null,
+                stopError = OperationStopError(
+                    title = when (target) {
+                        is OperationStopTarget.Job -> "此 Job 已不在目前列表中，請重新整理。"
+                        is OperationStopTarget.Session -> "此 Session 已不在目前列表中，請重新整理。"
+                    },
+                    userMessage = null,
+                ),
+            )
+            return
+        }
+
+        operations.value = snapshot.copy(
+            stopConfirmation = null,
+            stoppingTarget = target,
+            stopMessage = null,
+            stopError = null,
+            error = null,
+        )
+        viewModelScope.launch {
+            val result = when (target) {
+                is OperationStopTarget.Job -> operationsRepository.stopJob(
+                    jobId = target.id,
+                    userConfirmed = true,
+                )
+                is OperationStopTarget.Session -> operationsRepository.stopSession(
+                    sessionId = target.id,
+                    userConfirmed = true,
+                )
+            }
+            when (result) {
+                is AppResult.Failure -> operations.value = operations.value.copy(
+                    stoppingTarget = null,
+                    stopError = OperationStopError(
+                        title = when (target) {
+                            is OperationStopTarget.Job -> "無法停止 Job #${target.id}"
+                            is OperationStopTarget.Session -> "無法停止 Session #${target.id}"
+                        },
+                        userMessage = result.error.userMessage,
+                    ),
+                )
+                is AppResult.Success -> applyPostStopRefresh(target)
+            }
+        }
+    }
+
     fun requestMaintenance(action: MaintenanceAction) {
-        if (maintenance.value.loading) return
+        if (
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null ||
+            stopStateActive()
+        ) return
+
         maintenance.value = maintenance.value.copy(
             confirmation = action,
             message = null,
@@ -213,7 +374,7 @@ class DashboardViewModel(
 
     fun confirmMaintenance() {
         val action = maintenance.value.confirmation ?: return
-        if (maintenance.value.loading) return
+        if (maintenance.value.loading || stopStateActive()) return
         if (coordinator.state.value.stage != InstallationStage.READY) {
             maintenance.value = maintenance.value.copy(
                 confirmation = null,
@@ -242,6 +403,70 @@ class DashboardViewModel(
             }
         }
     }
+
+    private suspend fun loadOperationsSnapshot(): OperationsLoadResult {
+        val jobsResult = operationsRepository.jobs()
+        val sessionsResult = operationsRepository.sessions()
+        if (jobsResult is AppResult.Success && sessionsResult is AppResult.Success) {
+            return OperationsLoadResult.Success(
+                jobs = jobsResult.value,
+                sessions = sessionsResult.value,
+            )
+        }
+        val messages = buildList {
+            if (jobsResult is AppResult.Failure) add(jobsResult.error.userMessage)
+            if (sessionsResult is AppResult.Failure) add(sessionsResult.error.userMessage)
+        }
+        return OperationsLoadResult.Failure(
+            userMessage = messages.distinct()
+                .joinToString("\n")
+                .ifBlank { "無法取得 Jobs 與 Sessions" },
+        )
+    }
+
+    private suspend fun applyPostStopRefresh(target: OperationStopTarget) {
+        when (val result = loadOperationsSnapshot()) {
+            is OperationsLoadResult.Failure -> operations.value = operations.value.copy(
+                stoppingTarget = null,
+                stopMessage = "停止要求已成功送出，但無法確認最新狀態。請手動重新整理。",
+                stopError = null,
+            )
+            is OperationsLoadResult.Success -> {
+                val targetPresent = target.existsIn(result.jobs, result.sessions)
+                val selectedJob = operations.value.selectedJob
+                    ?.takeIf { selected ->
+                        target !is OperationStopTarget.Job || selected.id != target.id
+                    }
+                    ?.takeIf { selected -> result.jobs.any { it.id == selected.id } }
+                operations.value = operations.value.copy(
+                    jobs = result.jobs,
+                    sessions = result.sessions,
+                    selectedJob = selectedJob,
+                    stoppingTarget = null,
+                    error = null,
+                    stopError = null,
+                    stopMessage = if (targetPresent) {
+                        "停止要求已成功送出，但該項目仍出現在最新列表中。"
+                    } else {
+                        when (target) {
+                            is OperationStopTarget.Job -> "Job #${target.id} 已停止"
+                            is OperationStopTarget.Session -> "Session #${target.id} 已停止"
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    private fun stopRequestBlocked(snapshot: OperationsSnapshot): Boolean =
+        snapshot.loading ||
+            snapshot.stopConfirmation != null ||
+            snapshot.stoppingTarget != null ||
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null
+
+    private fun stopStateActive(): Boolean =
+        operations.value.stopConfirmation != null || operations.value.stoppingTarget != null
 
     private suspend fun runPostMaintenanceHealthCheck(action: MaintenanceAction) {
         when (
