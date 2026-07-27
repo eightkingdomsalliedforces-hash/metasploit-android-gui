@@ -37,6 +37,41 @@ class RpcOperationsService(private val transport: RpcTransport) {
             is AppResult.Success -> parseSessions(result.value)
         }
 
+    suspend fun stopJob(
+        token: String,
+        jobId: String,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> {
+        if (!userConfirmed) {
+            return invalid(
+                "RPC_JOB_CONFIRMATION_REQUIRED",
+                "停止 Job 需要使用者明確確認",
+                retryable = false,
+            )
+        }
+        jobId.toLongOrNull()?.takeIf { it >= 0 }
+            ?: return invalid("RPC_JOB_ID_INVALID", "Job ID 不正確", retryable = false)
+        return invalid("RPC_JOB_STOP_FAILED", "Metasploit Job 停止尚未完成", retryable = false)
+    }
+
+    suspend fun stopSession(
+        token: String,
+        sessionId: Int,
+        userConfirmed: Boolean,
+    ): AppResult<Unit> {
+        if (!userConfirmed) {
+            return invalid(
+                "RPC_SESSION_CONFIRMATION_REQUIRED",
+                "停止 Session 需要使用者明確確認",
+                retryable = false,
+            )
+        }
+        if (sessionId < 0) {
+            return invalid("RPC_SESSION_ID_INVALID", "Session ID 不正確", retryable = false)
+        }
+        return invalid("RPC_SESSION_STOP_FAILED", "Metasploit Session 停止尚未完成", retryable = false)
+    }
+
     private fun parseJobs(value: RpcValue): AppResult<List<MetasploitJobSummary>> {
         val map = value.mapOrNull()
             ?: return invalid("RPC_JOB_LIST_INVALID", "Metasploit Job 列表格式不正確")
