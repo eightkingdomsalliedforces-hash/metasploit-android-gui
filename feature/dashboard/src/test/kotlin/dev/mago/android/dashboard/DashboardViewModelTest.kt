@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -50,7 +51,6 @@ class DashboardViewModelTest {
         val repository = FakeOperationsRepository()
         val viewModel = DashboardViewModel(FakeCoordinator(), repository, FakeTermuxGateway())
         val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
-
         advanceUntilIdle()
 
         assertThat(repository.jobsCalls).isEqualTo(1)
@@ -128,6 +128,359 @@ class DashboardViewModelTest {
         assertThat(viewModel.uiState.value.stopConfirmation).isNull()
         assertThat(viewModel.uiState.value.stopError?.title).contains("已不在目前列表")
         assertThat(repository.stopSessionCalls).isEmpty()
+        collection.cancel()
+    }
+
+    @Test
+    fun `non-ready confirmation performs zero stop calls`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.CHECKING_DEVICE),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopJob("2")
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(repository.stopJobCalls).isEmpty()
+        assertThat(viewModel.uiState.value.stopError?.title).contains("尚未就緒")
+        collection.cancel()
+    }
+
+    @Test
+    fun `successful job stop calls once and verifies both lists once`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        val jobsCalls = repository.jobsCalls
+        val sessionsCalls = repository.sessionsCalls
+
+        repository.jobsResult = AppResult.Success(emptyList())
+        viewModel.requestStopJob("2")
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(repository.stopJobCalls).containsExactly("2" to true)
+        assertThat(repository.jobsCalls).isEqualTo(jobsCalls + 1)
+        assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls + 1)
+        assertThat(viewModel.uiState.value.jobs).isEmpty()
+        assertThat(viewModel.uiState.value.stopMessage).isEqualTo("Job #2 已停止")
+        assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+        collection.cancel()
+    }
+
+    @Test
+    fun `stop failure performs zero verification reads`() = runTest {
+        val repository = FakeOperationsRepository().apply {
+            stopSessionResult = AppResult.Failure(
+                AppError(errorCode = "STOP_FAILED", userMessage = "stop failed"),
+            )
+        }
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        val jobsCalls = repository.jobsCalls
+        val sessionsCalls = repository.sessionsCalls
+
+        viewModel.requestStopSession(7)
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(repository.stopSessionCalls).containsExactly(7 to true)
+        assertThat(repository.jobsCalls).isEqualTo(jobsCalls)
+        assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls)
+        assertThat(viewModel.uiState.value.stopError?.title).isEqualTo("無法停止 Session #7")
+        assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+        collection.cancel()
+    }
+
+    @Test
+    fun `verification failure preserves both old lists and selected job`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        viewModel.selectJob("2")
+        advanceUntilIdle()
+
+        repository.jobsResult = AppResult.Success(emptyList())
+        repository.sessionsResult = AppResult.Failure(
+            AppError(errorCode = "SESSIONS_FAILED", userMessage = "sessions failed"),
+        )
+        viewModel.requestStopJob("2")
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.jobs)
+            .containsExactlyElementsIn(FakeOperationsRepository.defaultJobs())
+        assertThat(viewModel.uiState.value.sessions)
+            .containsExactlyElementsIn(FakeOperationsRepository.defaultSessions())
+        assertThat(viewModel.uiState.value.selectedJob?.id).isEqualTo("2")
+        assertThat(viewModel.uiState.value.stopMessage)
+            .isEqualTo("停止要求已成功送出，但無法確認最新狀態。請手動重新整理。")
+        collection.cancel()
+    }
+
+    @Test
+    fun `still-present target is reported without claiming completion`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopSession(7)
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.stopMessage)
+            .isEqualTo("停止要求已成功送出，但該項目仍出現在最新列表中。")
+        collection.cancel()
+    }
+
+    @Test
+    fun `active stop blocks second stop refresh detail and maintenance`() = runTest {
+        val repository = FakeOperationsRepository()
+        val gate = CompletableDeferred<Unit>()
+        repository.stopJobGate = gate
+        val gateway = FakeTermuxGateway()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            gateway,
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        val jobsCalls = repository.jobsCalls
+        val sessionsCalls = repository.sessionsCalls
+
+        viewModel.requestStopJob("2")
+        viewModel.confirmStop()
+        runCurrent()
+        assertThat(viewModel.uiState.value.stoppingTarget)
+            .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+
+        viewModel.requestStopSession(7)
+        viewModel.refreshOperations()
+        viewModel.selectJob("2")
+        viewModel.requestMaintenance(MaintenanceAction.CLEAN_CACHE)
+        viewModel.confirmMaintenance()
+        runCurrent()
+
+        assertThat(repository.stopJobCalls).containsExactly("2" to true)
+        assertThat(repository.stopSessionCalls).isEmpty()
+        assertThat(repository.jobsCalls).isEqualTo(jobsCalls)
+        assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls)
+        assertThat(repository.jobInfoCalls).isEmpty()
+        assertThat(viewModel.uiState.value.maintenanceConfirmation).isNull()
+        assertThat(gateway.actions).isEmpty()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+        collection.cancel()
+    }
+
+    @Test
+    fun `maintenance confirmation blocks stop confirmation`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestMaintenance(MaintenanceAction.CLEAN_CACHE)
+        viewModel.requestStopJob("2")
+
+        assertThat(viewModel.uiState.value.maintenanceConfirmation)
+            .isEqualTo(MaintenanceAction.CLEAN_CACHE)
+        assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+        assertThat(repository.stopJobCalls).isEmpty()
+        collection.cancel()
+    }
+
+    @Test
+    fun `stopping selected job clears detail after successful refresh`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        viewModel.selectJob("2")
+        advanceUntilIdle()
+
+        repository.jobsResult = AppResult.Success(emptyList())
+        viewModel.requestStopJob("2")
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.selectedJob).isNull()
+        collection.cancel()
+    }
+
+    @Test
+    fun `stopping session retains unrelated selected job when job remains`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        viewModel.selectJob("2")
+        advanceUntilIdle()
+
+        repository.sessionsResult = AppResult.Success(emptyList())
+        viewModel.requestStopSession(7)
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.selectedJob?.id).isEqualTo("2")
+        collection.cancel()
+    }
+
+    @Test
+    fun `target removed after confirmation performs zero stop calls`() = runTest {
+        val mutableJobs = mutableListOf(MetasploitJobSummary("2", "Example Job"))
+        val repository = FakeOperationsRepository().apply {
+            jobsResult = AppResult.Success(mutableJobs)
+        }
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopJob("2")
+        assertThat(viewModel.uiState.value.stopConfirmation)
+            .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+
+        mutableJobs.clear()
+        viewModel.confirmStop()
+        advanceUntilIdle()
+
+        assertThat(repository.stopJobCalls).isEmpty()
+        assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+        assertThat(viewModel.uiState.value.stoppingTarget).isNull()
+        assertThat(viewModel.uiState.value.stopError?.title)
+            .isEqualTo("此 Job 已不在目前列表中，請重新整理。")
+        collection.cancel()
+    }
+
+    @Test
+    fun `stop confirmation blocks refresh detail maintenance and second stop`() = runTest {
+        val repository = FakeOperationsRepository()
+        val gateway = FakeTermuxGateway()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            gateway,
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+        val jobsCalls = repository.jobsCalls
+        val sessionsCalls = repository.sessionsCalls
+
+        viewModel.requestStopJob("2")
+        viewModel.requestStopSession(7)
+        viewModel.refreshOperations()
+        viewModel.selectJob("2")
+        viewModel.requestMaintenance(MaintenanceAction.CLEAN_CACHE)
+        viewModel.confirmMaintenance()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.stopConfirmation)
+            .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+        assertThat(repository.stopJobCalls).isEmpty()
+        assertThat(repository.stopSessionCalls).isEmpty()
+        assertThat(repository.jobsCalls).isEqualTo(jobsCalls)
+        assertThat(repository.sessionsCalls).isEqualTo(sessionsCalls)
+        assertThat(repository.jobInfoCalls).isEmpty()
+        assertThat(viewModel.uiState.value.maintenanceConfirmation).isNull()
+        assertThat(gateway.actions).isEmpty()
+        collection.cancel()
+    }
+
+    @Test
+    fun `accepted manual refresh clears old stop message`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopSession(7)
+        viewModel.confirmStop()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.stopMessage)
+            .isEqualTo("停止要求已成功送出，但該項目仍出現在最新列表中。")
+
+        viewModel.refreshOperations()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.stopMessage).isNull()
+        assertThat(viewModel.uiState.value.stopError).isNull()
+        collection.cancel()
+    }
+
+    @Test
+    fun `accepted manual refresh clears old stop error`() = runTest {
+        val repository = FakeOperationsRepository().apply {
+            stopSessionResult = AppResult.Failure(
+                AppError(errorCode = "STOP_FAILED", userMessage = "stop failed"),
+            )
+        }
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopSession(7)
+        viewModel.confirmStop()
+        advanceUntilIdle()
+        assertThat(viewModel.uiState.value.stopError?.title)
+            .isEqualTo("無法停止 Session #7")
+
+        viewModel.refreshOperations()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.stopMessage).isNull()
+        assertThat(viewModel.uiState.value.stopError).isNull()
         collection.cancel()
     }
 
