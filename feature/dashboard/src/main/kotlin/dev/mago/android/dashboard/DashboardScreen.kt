@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -101,6 +102,53 @@ fun DashboardScreen(
             },
         )
     }
+
+    state.stopConfirmation?.let { target ->
+        AlertDialog(
+            onDismissRequest = state.onCancelStop,
+            title = {
+                Text(
+                    when (target) {
+                        is OperationStopTarget.Job -> "確認停止 Job #${target.id}？"
+                        is OperationStopTarget.Session -> "確認停止 Session #${target.id}？"
+                    },
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when (target) {
+                        is OperationStopTarget.Job -> {
+                            Text("名稱：${target.name}")
+                            Text("停止後無法由 MAGO 復原。操作只會送出一次，不會自動重試。")
+                        }
+                        is OperationStopTarget.Session -> {
+                            Text("來源模組：${target.sourceModule ?: "尚未取得"}")
+                            Text("描述：${target.description.ifBlank { "尚未取得" }}")
+                            Text("停止後此 Session 可能無法再次連線。操作只會送出一次，不會自動重試。")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = state.onConfirmStop) { Text("確認停止") }
+            },
+            dismissButton = {
+                TextButton(onClick = state.onCancelStop) { Text("取消") }
+            },
+        )
+    }
+
+    val operationsControlsEnabled =
+        !state.operationsLoading &&
+            state.stopConfirmation == null &&
+            state.stoppingTarget == null &&
+            state.maintenanceConfirmation == null &&
+            !state.maintenanceLoading
+    val maintenanceControlsEnabled =
+        !state.maintenanceLoading &&
+            state.maintenanceConfirmation == null &&
+            state.stopConfirmation == null &&
+            state.stoppingTarget == null
 
     Column(
         modifier = Modifier
@@ -213,13 +261,13 @@ fun DashboardScreen(
         ) {
             OutlinedButton(
                 onClick = { state.onRequestMaintenance(MaintenanceAction.UPDATE_METASPLOIT) },
-                enabled = !state.maintenanceLoading,
+                enabled = maintenanceControlsEnabled,
             ) {
                 Text("更新 Metasploit")
             }
             OutlinedButton(
                 onClick = { state.onRequestMaintenance(MaintenanceAction.CLEAN_CACHE) },
-                enabled = !state.maintenanceLoading,
+                enabled = maintenanceControlsEnabled,
             ) {
                 Text("清理快取")
             }
@@ -242,26 +290,53 @@ fun DashboardScreen(
             Text("Jobs 與 Sessions", style = MaterialTheme.typography.titleLarge)
             OutlinedButton(
                 onClick = state.onRefreshOperations,
-                enabled = !state.operationsLoading,
+                enabled = operationsControlsEnabled,
             ) {
                 Text("重新整理")
             }
         }
-        Text("唯讀檢視；不提供 Session 命令、停止或批量操作。")
+        Text("單一 Job／Session 可在二次確認後停止；不提供 Session 命令、批量停止或自動重試。")
         if (state.operationsLoading && !state.reducedMotion) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }
         if (state.operationsLoading && state.reducedMotion) Text("正在載入 Jobs 與 Sessions")
+        state.stoppingTarget?.let { target ->
+            if (!state.reducedMotion) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(
+                when (target) {
+                    is OperationStopTarget.Job -> "正在停止 Job #${target.id}"
+                    is OperationStopTarget.Session -> "正在停止 Session #${target.id}"
+                },
+            )
+        }
         state.operationsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.stopMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        state.stopError?.let { error ->
+            Text(error.title, color = MaterialTheme.colorScheme.error)
+            error.userMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
 
         Text("Jobs（${state.jobs.size}）", style = MaterialTheme.typography.titleMedium)
         if (!state.operationsLoading && state.jobs.isEmpty()) Text("目前沒有執行中的 Job")
-        state.jobs.forEach { job -> JobCard(job, state.onSelectJob) }
+        state.jobs.forEach { job ->
+            JobCard(
+                job = job,
+                enabled = operationsControlsEnabled,
+                onSelect = state.onSelectJob,
+                onStop = state.onRequestStopJob,
+            )
+        }
         state.selectedJob?.let { job -> JobDetailCard(job) }
 
         Text("Sessions（${state.sessions.size}）", style = MaterialTheme.typography.titleMedium)
         if (!state.operationsLoading && state.sessions.isEmpty()) Text("目前沒有 Session")
-        state.sessions.forEach { session -> SessionCard(session) }
+        state.sessions.forEach { session ->
+            SessionCard(
+                session = session,
+                enabled = operationsControlsEnabled,
+                onStop = state.onRequestStopSession,
+            )
+        }
     }
 }
 
@@ -273,12 +348,33 @@ private fun MagoThemeMode.displayName(): String = when (this) {
 }
 
 @Composable
-private fun JobCard(job: MetasploitJobSummary, onSelect: (String) -> Unit) {
+private fun JobCard(
+    job: MetasploitJobSummary,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
+    onStop: (String) -> Unit,
+) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Job #${job.id}", style = MaterialTheme.typography.titleMedium)
             Text(job.name)
-            OutlinedButton(onClick = { onSelect(job.id) }) { Text("查看詳情") }
+            OutlinedButton(
+                onClick = { onSelect(job.id) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("查看詳情")
+            }
+            OutlinedButton(
+                onClick = { onStop(job.id) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("停止 Job")
+            }
         }
     }
 }
@@ -302,7 +398,11 @@ private fun JobDetailCard(job: MetasploitJobInfo) {
 }
 
 @Composable
-private fun SessionCard(session: MetasploitSessionSummary) {
+private fun SessionCard(
+    session: MetasploitSessionSummary,
+    enabled: Boolean,
+    onStop: (Int) -> Unit,
+) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Session #${session.id}", style = MaterialTheme.typography.titleMedium)
@@ -317,6 +417,16 @@ private fun SessionCard(session: MetasploitSessionSummary) {
             session.viaExploit?.let { Text("來源模組：$it") }
             session.viaPayload?.let { Text("Payload：$it") }
             if (session.routes.isNotEmpty()) Text("Routes：${session.routes.joinToString()}")
+            OutlinedButton(
+                onClick = { onStop(session.id) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("停止 Session")
+            }
         }
     }
 }
