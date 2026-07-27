@@ -138,6 +138,7 @@ class DashboardViewModel(
             operationsLoading = operationsSnapshot.loading,
             operationsError = operationsSnapshot.error,
             stopConfirmation = operationsSnapshot.stopConfirmation,
+            stoppingTarget = operationsSnapshot.stoppingTarget,
             stopMessage = operationsSnapshot.stopMessage,
             stopError = operationsSnapshot.stopError,
             maintenanceConfirmation = maintenanceSnapshot.confirmation,
@@ -149,6 +150,7 @@ class DashboardViewModel(
             onSelectJob = ::selectJob,
             onRequestStopJob = ::requestStopJob,
             onRequestStopSession = ::requestStopSession,
+            onConfirmStop = ::confirmStop,
             onCancelStop = ::cancelStop,
             onRequestMaintenance = ::requestMaintenance,
             onConfirmMaintenance = ::confirmMaintenance,
@@ -162,6 +164,7 @@ class DashboardViewModel(
             onSelectJob = ::selectJob,
             onRequestStopJob = ::requestStopJob,
             onRequestStopSession = ::requestStopSession,
+            onConfirmStop = ::confirmStop,
             onCancelStop = ::cancelStop,
             onRequestMaintenance = ::requestMaintenance,
             onConfirmMaintenance = ::confirmMaintenance,
@@ -280,6 +283,75 @@ class DashboardViewModel(
         operations.value = operations.value.copy(stopConfirmation = null)
     }
 
+    fun confirmStop() {
+        val snapshot = operations.value
+        val target = snapshot.stopConfirmation ?: return
+        if (
+            snapshot.loading ||
+            snapshot.stoppingTarget != null ||
+            maintenance.value.loading ||
+            maintenance.value.confirmation != null
+        ) return
+
+        if (coordinator.state.value.stage != InstallationStage.READY) {
+            operations.value = snapshot.copy(
+                stopConfirmation = null,
+                stopError = OperationStopError(
+                    title = "RPC 環境尚未就緒，未送出停止要求。",
+                    userMessage = null,
+                ),
+            )
+            return
+        }
+
+        if (!target.existsIn(snapshot.jobs, snapshot.sessions)) {
+            operations.value = snapshot.copy(
+                stopConfirmation = null,
+                stopError = OperationStopError(
+                    title = when (target) {
+                        is OperationStopTarget.Job -> "此 Job 已不在目前列表中，請重新整理。"
+                        is OperationStopTarget.Session -> "此 Session 已不在目前列表中，請重新整理。"
+                    },
+                    userMessage = null,
+                ),
+            )
+            return
+        }
+
+        operations.value = snapshot.copy(
+            stopConfirmation = null,
+            stoppingTarget = target,
+            stopMessage = null,
+            stopError = null,
+            error = null,
+        )
+        viewModelScope.launch {
+            val result = when (target) {
+                is OperationStopTarget.Job -> operationsRepository.stopJob(
+                    jobId = target.id,
+                    userConfirmed = true,
+                )
+                is OperationStopTarget.Session -> operationsRepository.stopSession(
+                    sessionId = target.id,
+                    userConfirmed = true,
+                )
+            }
+            when (result) {
+                is AppResult.Failure -> operations.value = operations.value.copy(
+                    stoppingTarget = null,
+                    stopError = OperationStopError(
+                        title = when (target) {
+                            is OperationStopTarget.Job -> "無法停止 Job #${target.id}"
+                            is OperationStopTarget.Session -> "無法停止 Session #${target.id}"
+                        },
+                        userMessage = result.error.userMessage,
+                    ),
+                )
+                is AppResult.Success -> applyPostStopRefresh(target)
+            }
+        }
+    }
+
     fun requestMaintenance(action: MaintenanceAction) {
         if (
             maintenance.value.loading ||
@@ -350,6 +422,40 @@ class DashboardViewModel(
                 .joinToString("\n")
                 .ifBlank { "無法取得 Jobs 與 Sessions" },
         )
+    }
+
+    private suspend fun applyPostStopRefresh(target: OperationStopTarget) {
+        when (val result = loadOperationsSnapshot()) {
+            is OperationsLoadResult.Failure -> operations.value = operations.value.copy(
+                stoppingTarget = null,
+                stopMessage = "停止要求已成功送出，但無法確認最新狀態。請手動重新整理。",
+                stopError = null,
+            )
+            is OperationsLoadResult.Success -> {
+                val targetPresent = target.existsIn(result.jobs, result.sessions)
+                val selectedJob = operations.value.selectedJob
+                    ?.takeIf { selected ->
+                        target !is OperationStopTarget.Job || selected.id != target.id
+                    }
+                    ?.takeIf { selected -> result.jobs.any { it.id == selected.id } }
+                operations.value = operations.value.copy(
+                    jobs = result.jobs,
+                    sessions = result.sessions,
+                    selectedJob = selectedJob,
+                    stoppingTarget = null,
+                    error = null,
+                    stopError = null,
+                    stopMessage = if (targetPresent) {
+                        "停止要求已成功送出，但該項目仍出現在最新列表中。"
+                    } else {
+                        when (target) {
+                            is OperationStopTarget.Job -> "Job #${target.id} 已停止"
+                            is OperationStopTarget.Session -> "Session #${target.id} 已停止"
+                        }
+                    },
+                )
+            }
+        }
     }
 
     private fun stopRequestBlocked(snapshot: OperationsSnapshot): Boolean =
