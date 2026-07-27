@@ -39,7 +39,9 @@ value class RpcMethod(val value: String) {
 
         val JOB_LIST = RpcMethod("job.list")
         val JOB_INFO = RpcMethod("job.info")
+        val JOB_STOP = RpcMethod("job.stop")
         val SESSION_LIST = RpcMethod("session.list")
+        val SESSION_STOP = RpcMethod("session.stop")
 
         val DB_WORKSPACES = RpcMethod("db.workspaces")
         val DB_CURRENT_WORKSPACE = RpcMethod("db.current_workspace")
