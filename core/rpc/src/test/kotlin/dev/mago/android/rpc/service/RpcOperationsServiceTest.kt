@@ -92,8 +92,65 @@ class RpcOperationsServiceTest {
         assertThat(session.extraFields).containsKey("future_field")
     }
 
+    @Test
+    fun `unconfirmed job stop performs zero transport calls`() = runTest {
+        val transport = FakeTransport(successResponse())
+
+        val result = RpcOperationsService(transport)
+            .stopJob("token", "4", userConfirmed = false)
+
+        assertFailureCode(result, "RPC_JOB_CONFIRMATION_REQUIRED")
+        assertThat(transport.calls).isEqualTo(0)
+    }
+
+    @Test
+    fun `invalid job IDs perform zero transport calls`() = runTest {
+        listOf("not-a-number", "-1", "9223372036854775808").forEach { id ->
+            val transport = FakeTransport(successResponse())
+
+            val result = RpcOperationsService(transport)
+                .stopJob("token", id, userConfirmed = true)
+
+            assertFailureCode(result, "RPC_JOB_ID_INVALID")
+            assertThat(transport.calls).isEqualTo(0)
+        }
+    }
+
+    @Test
+    fun `unconfirmed session stop performs zero transport calls`() = runTest {
+        val transport = FakeTransport(successResponse())
+
+        val result = RpcOperationsService(transport)
+            .stopSession("token", 7, userConfirmed = false)
+
+        assertFailureCode(result, "RPC_SESSION_CONFIRMATION_REQUIRED")
+        assertThat(transport.calls).isEqualTo(0)
+    }
+
+    @Test
+    fun `negative session ID performs zero transport calls`() = runTest {
+        val transport = FakeTransport(successResponse())
+
+        val result = RpcOperationsService(transport)
+            .stopSession("token", -1, userConfirmed = true)
+
+        assertFailureCode(result, "RPC_SESSION_ID_INVALID")
+        assertThat(transport.calls).isEqualTo(0)
+    }
+
+    private fun successResponse(): RpcValue = RpcValue.MapValue(
+        mapOf("result" to RpcValue.StringValue("success")),
+    )
+
+    private fun assertFailureCode(result: AppResult<*>, code: String) {
+        assertThat(result).isInstanceOf(AppResult.Failure::class.java)
+        assertThat((result as AppResult.Failure).error.errorCode).isEqualTo(code)
+    }
+
     private class FakeTransport(private val response: RpcValue) : RpcTransport {
+        var calls = 0
         var lastMethod: RpcMethod? = null
+        var lastToken: String? = null
         var lastArguments: List<RpcValue> = emptyList()
 
         override suspend fun call(
@@ -101,7 +158,9 @@ class RpcOperationsServiceTest {
             token: String?,
             arguments: List<RpcValue>,
         ): AppResult<RpcValue> {
+            calls += 1
             lastMethod = method
+            lastToken = token
             lastArguments = arguments
             return AppResult.Success(response)
         }
