@@ -187,6 +187,16 @@ class DashboardViewModelTest {
                 ),
             )
         }
+
+        override suspend fun stopJob(
+            jobId: String,
+            userConfirmed: Boolean,
+        ): AppResult<Unit> = AppResult.Success(Unit)
+
+        override suspend fun stopSession(
+            sessionId: Int,
+            userConfirmed: Boolean,
+        ): AppResult<Unit> = AppResult.Success(Unit)
     }
 
     private class FakeTermuxGateway(
