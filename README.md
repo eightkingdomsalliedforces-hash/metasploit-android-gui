@@ -26,10 +26,13 @@ MAGO 是供 Android 12 以上裝置使用的原生管理介面。Metasploit、Po
 - Check／Execute 前要求明確確認及授權用途聲明
 - 執行前稽核 fail-closed；稽核寫入失敗時不呼叫 RPC
 - 只保存已遮罩的參數、狀態、Job ID／UUID 與必要稽核資訊
-- 首頁提供唯讀 Jobs／Sessions 摘要與手動重新整理
+- 首頁提供 Jobs／Sessions 摘要與手動重新整理
+- 可在二次確認後停止單一 Job 或單一 Session
+- 每次確認最多送出一次 `job.stop` 或 `session.stop`，不自動重試
+- 停止成功後只執行一次 Jobs／Sessions 原子重新讀取；任一讀取失敗會保留舊快照
 - Metasploit Console 操作保持在既有受控 RPC／記憶體邊界內
 
-MAGO 不提供批量執行、自動後滲透、自主掃描、憑證擷取捷徑或背景 Session 輪詢。
+MAGO 不提供 Session 命令、批量停止、全部停止、自動後滲透、自主掃描、憑證擷取捷徑、背景 Session 輪詢或自動停止重試。
 
 ### Workspace、資產與報告
 
@@ -167,7 +170,15 @@ git diff --exit-code -- \
 - [ ] PostgreSQL／RPC 啟動、停止及健康檢查
 - [ ] Workspace 建立、切換及 Hosts／Services／Vulnerabilities 讀取
 - [ ] 模組搜尋、收藏、離線快取、Check／Execute 確認及稽核失敗關閉
-- [ ] Jobs／Sessions 唯讀摘要與手動重新整理
+- [ ] Jobs／Sessions 摘要與手動重新整理
+- [ ] 取消停止確認時不送出 RPC
+- [ ] Job 停止成功後只自動驗證刷新一次
+- [ ] Session 停止成功後只自動驗證刷新一次
+- [ ] 快速連點只產生一個停止 RPC
+- [ ] 停止期間刷新、詳情、其他停止與維護控制不可用
+- [ ] RPC 離線時不顯示誤導性的停止成功
+- [ ] 160%／200% 字體下確認內容與按鈕完整可用
+- [ ] reduced-motion 下停止過程只使用靜態文字
 - [ ] App 鎖啟用、停用、背景返回及系統驗證取消
 - [ ] 淺色、深色、AMOLED、100%～200% 字體與減少動畫
 - [ ] 原始報告欄位展開、巢狀 `extraFields` 及截斷提示
