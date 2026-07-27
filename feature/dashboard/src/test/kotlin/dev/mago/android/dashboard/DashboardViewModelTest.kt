@@ -16,6 +16,7 @@ import dev.mago.android.model.MetasploitSessionSummary
 import dev.mago.android.model.MetasploitVersion
 import dev.mago.android.model.bridge.BridgeAction
 import dev.mago.android.model.bridge.BridgeResponse
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,70 @@ class DashboardViewModelTest {
 
         assertThat(repository.jobInfoCalls).containsExactly("2")
         assertThat(viewModel.uiState.value.selectedJob?.name).isEqualTo("Example Job")
+        collection.cancel()
+    }
+
+    @Test
+    fun `manual refresh failure preserves both old lists`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(FakeCoordinator(), repository, FakeTermuxGateway())
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        repository.jobsResult = AppResult.Failure(
+            AppError(errorCode = "JOBS_FAILED", userMessage = "jobs failed"),
+        )
+        repository.sessionsResult = AppResult.Success(emptyList())
+        viewModel.refreshOperations()
+        advanceUntilIdle()
+
+        assertThat(viewModel.uiState.value.jobs)
+            .containsExactlyElementsIn(FakeOperationsRepository.defaultJobs())
+        assertThat(viewModel.uiState.value.sessions)
+            .containsExactlyElementsIn(FakeOperationsRepository.defaultSessions())
+        collection.cancel()
+    }
+
+    @Test
+    fun `request and cancel perform zero stop calls`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopJob("2")
+
+        assertThat(viewModel.uiState.value.stopConfirmation)
+            .isEqualTo(OperationStopTarget.Job("2", "Example Job"))
+        assertThat(repository.stopJobCalls).isEmpty()
+
+        viewModel.cancelStop()
+
+        assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+        assertThat(repository.stopJobCalls).isEmpty()
+        collection.cancel()
+    }
+
+    @Test
+    fun `missing target fails before confirmation`() = runTest {
+        val repository = FakeOperationsRepository()
+        val viewModel = DashboardViewModel(
+            FakeCoordinator(InstallationStage.READY),
+            repository,
+            FakeTermuxGateway(),
+        )
+        val collection = backgroundScope.launch(dispatcher) { viewModel.uiState.collect { } }
+        advanceUntilIdle()
+
+        viewModel.requestStopSession(99)
+
+        assertThat(viewModel.uiState.value.stopConfirmation).isNull()
+        assertThat(viewModel.uiState.value.stopError?.title).contains("已不在目前列表")
+        assertThat(repository.stopSessionCalls).isEmpty()
         collection.cancel()
     }
 
@@ -136,67 +201,81 @@ class DashboardViewModelTest {
     }
 
     private class FakeOperationsRepository : MetasploitOperationsRepository {
+        var jobsResult: AppResult<List<MetasploitJobSummary>> = AppResult.Success(defaultJobs())
+        var sessionsResult: AppResult<List<MetasploitSessionSummary>> = AppResult.Success(defaultSessions())
+        var jobInfoResult: AppResult<MetasploitJobInfo> = AppResult.Success(defaultJobInfo("2"))
+        var stopJobResult: AppResult<Unit> = AppResult.Success(Unit)
+        var stopSessionResult: AppResult<Unit> = AppResult.Success(Unit)
+        var stopJobGate: CompletableDeferred<Unit>? = null
+
         var jobsCalls = 0
         var sessionsCalls = 0
         val jobInfoCalls = mutableListOf<String>()
+        val stopJobCalls = mutableListOf<Pair<String, Boolean>>()
+        val stopSessionCalls = mutableListOf<Pair<Int, Boolean>>()
 
-        override suspend fun jobs(): AppResult<List<MetasploitJobSummary>> {
-            jobsCalls += 1
-            return AppResult.Success(listOf(MetasploitJobSummary("2", "Example Job")))
-        }
+        override suspend fun jobs(): AppResult<List<MetasploitJobSummary>> =
+            jobsResult.also { jobsCalls += 1 }
 
-        override suspend fun jobInfo(jobId: String): AppResult<MetasploitJobInfo> {
-            jobInfoCalls += jobId
-            return AppResult.Success(
-                MetasploitJobInfo(
-                    id = jobId,
-                    name = "Example Job",
-                    startTimeEpochSeconds = 100,
-                    uriPath = null,
-                    datastore = emptyMap(),
-                    extraFields = emptyMap(),
-                ),
-            )
-        }
+        override suspend fun sessions(): AppResult<List<MetasploitSessionSummary>> =
+            sessionsResult.also { sessionsCalls += 1 }
 
-        override suspend fun sessions(): AppResult<List<MetasploitSessionSummary>> {
-            sessionsCalls += 1
-            return AppResult.Success(
-                listOf(
-                    MetasploitSessionSummary(
-                        id = 7,
-                        type = "meterpreter",
-                        description = "Meterpreter",
-                        info = "Authorized lab",
-                        workspace = "default",
-                        sessionHost = "192.0.2.10",
-                        sessionPort = 445,
-                        targetHost = null,
-                        username = null,
-                        uuid = null,
-                        exploitUuid = null,
-                        viaExploit = null,
-                        viaPayload = null,
-                        architecture = "x64",
-                        platform = "windows",
-                        tunnelLocal = null,
-                        tunnelPeer = null,
-                        routes = emptyList(),
-                        extraFields = emptyMap(),
-                    ),
-                ),
-            )
-        }
+        override suspend fun jobInfo(jobId: String): AppResult<MetasploitJobInfo> =
+            jobInfoResult.also { jobInfoCalls += jobId }
 
         override suspend fun stopJob(
             jobId: String,
             userConfirmed: Boolean,
-        ): AppResult<Unit> = AppResult.Success(Unit)
+        ): AppResult<Unit> {
+            stopJobCalls += jobId to userConfirmed
+            stopJobGate?.await()
+            return stopJobResult
+        }
 
         override suspend fun stopSession(
             sessionId: Int,
             userConfirmed: Boolean,
-        ): AppResult<Unit> = AppResult.Success(Unit)
+        ): AppResult<Unit> {
+            stopSessionCalls += sessionId to userConfirmed
+            return stopSessionResult
+        }
+
+        companion object {
+            fun defaultJobs() = listOf(MetasploitJobSummary("2", "Example Job"))
+
+            fun defaultJobInfo(id: String) = MetasploitJobInfo(
+                id = id,
+                name = "Example Job",
+                startTimeEpochSeconds = 100,
+                uriPath = null,
+                datastore = emptyMap(),
+                extraFields = emptyMap(),
+            )
+
+            fun defaultSessions() = listOf(
+                MetasploitSessionSummary(
+                    id = 7,
+                    type = "meterpreter",
+                    description = "Meterpreter",
+                    info = "Authorized lab",
+                    workspace = "default",
+                    sessionHost = "192.0.2.10",
+                    sessionPort = 445,
+                    targetHost = null,
+                    username = null,
+                    uuid = null,
+                    exploitUuid = null,
+                    viaExploit = "exploit/multi/handler",
+                    viaPayload = null,
+                    architecture = "x64",
+                    platform = "windows",
+                    tunnelLocal = null,
+                    tunnelPeer = null,
+                    routes = emptyList(),
+                    extraFields = emptyMap(),
+                ),
+            )
+        }
     }
 
     private class FakeTermuxGateway(
